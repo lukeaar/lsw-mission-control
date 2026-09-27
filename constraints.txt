@@ -1,0 +1,3 @@
+# The rich release the golden renders were made with. Bump it deliberately: regenerate the
+# goldens (pytest --update-golden) and review every changed line.
+rich==15.0.0

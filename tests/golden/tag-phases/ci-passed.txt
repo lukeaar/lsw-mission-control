@@ -1,0 +1,15 @@
+╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 53% of the release done  ·  1/6 items ready  ·  1 failed  ·  1 overrun                      │
+│                          release out 14:42 (in 29m)                                                                  │
+│                                                                                                                      │
+│ item                                    stages       stage            progress                                   eta │
+│ Export to CSV                         ●─●─●─●─◉      fix              ━━━━━━━━━━━━━━━━━━━━━  93%        ~10m · 14:23 │
+│ Faster startup                          ◉─○─○        build +1h00      ━━━━━━━━━━━━━━━━━━━━━  64%       ≥1h23 · 15:36 │
+│ Dark mode polish                        ○─○─○        after faster     ━━━━━━━━━━━━━━━━━━━━━   0%       ~2h37 · 16:50 │
+│ Accessibility audit                     ✕─○─○        build failed     ━━━━━━━━━━━━━━━━━━━━━  25%         needs rerun │
+│ Security review                         ○─○─○        your go-ahead    ━━━━━━━━━━━━━━━━━━━━━   0%       ~4h52 · 19:05 │
+│ ● 1 finished                                                                                                       ✓ │
+│                                                                                                                      │
+│ Final merge                             ●─●─●        from 11:13       ━━━━━━━━━━━━━━━━━━━━━ 100%   took 2h00 · 13:13 │
+│ Tag 1.4.0 + packages               CI ✓ · tag next   since 13:53      ━━━━━━━━━━━━━━━━━━━━━  41%        ~29m · 14:42 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

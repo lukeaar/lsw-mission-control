@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lsw-mission-control"
+dynamic = ["version"]
+description = "A live terminal dashboard of the Claude Code agents working on a project, its plan, its repository and its model usage"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["rich>=15,<16"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "pyte>=0.8"]
+
+[project.scripts]
+lsw-mc = "lsw_mission_control.cli:main"
+
+[tool.hatch.version]
+path = "src/lsw_mission_control/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lsw_mission_control"]
+
+[tool.pytest.ini_options]
+# no .pytest_cache in the (possibly synced) checkout; tests import THIS tree, never the installed one
+addopts = "-p no:cacheprovider -q"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+src = ["src", "tests"]
+cache-dir = "~/.cache/lsw-mission-control/ruff"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["lsw_mission_control"]
+known-local-folder = ["conftest", "scenarios", "golden_util", "stub_plugin"]
+
+[tool.ruff.lint.per-file-ignores]
+# the logo's geometry keeps its short maths names on one line, as it always has
+"src/lsw_mission_control/render/logo.py" = ["E702", "E741"]

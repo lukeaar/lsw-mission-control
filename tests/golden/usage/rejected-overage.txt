@@ -1,0 +1,14 @@
+╭─  Model usage  ──────────────────────────────────────────────────────────────────────────────────╮
+│ weekly       ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  100%   resets 15:13 · in 1h00                             │
+│ status       limit reached  ·  using usage credits                                               │
+│                                                                                                  │
+│ tokens        output  input  cache writes  cache reads                                           │
+│ last 5 h        350k   1.2k          2.4M          41M                                           │
+│ today           610k   2.1k          4.1M          88M                                           │
+│ 7 days          4.9M    52k          120M         2.3B                                           │
+│                                                                                                  │
+│ by model      last 5 h  today  7 days  share · 7 days                                            │
+│ Opus              300k   520k    4.1M             84%                                            │
+│ Sonnet             50k    90k    700k             14%                                            │
+│ Haiku                0      0    100k              2%                                            │
+╰───────────────────────────────────────────────────────── plan data as of 14:12 · 1m ago · probe ─╯

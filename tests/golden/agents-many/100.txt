@@ -1,0 +1,55 @@
+ DEMO   mission control   Mon 21 Sep · 14:13:20
+
+╭─  Waiting on you  ───────────────────────────────────────────────────────────────────────────────╮
+│ ✓ nothing is waiting on you                                                                      │
+╰───────────────────────────────────────────────────────────────────────── updated 14:08 · 5m ago ─╯
+╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────╮
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 0% of the release done  ·  1/6 items ready                              │
+│                          release out Tue 01:34 (in 11h21)                                        │
+│                                                                                                  │
+│ item                             stages       stage            progress                      eta │
+│ Export to CSV                  ○─○─○─○─○      queued           ━━━━━━━━   0%       ~2h11 · 16:24 │
+│ Faster startup                   ○─○─○        queued           ━━━━━━━━   0%       ~2h16 · 16:29 │
+│ Dark mode polish                 ○─○─○        after faster     ━━━━━━━━   0%       ~3h30 · 17:43 │
+│ Accessibility audit              ○─○─○        queued           ━━━━━━━━   0%       ~3h01 · 17:14 │
+│ Security review                  ○─○─○        your go-ahead    ━━━━━━━━   0%       ~5h21 · 19:34 │
+│ ● 1 finished                                                                                   ✓ │
+│                                                                                                  │
+│ Final merge                 after all above   from 19:34       takes ~3h30            done 23:04 │
+│ Tag 1.4.0                   CI, tag, release  from 23:04       takes ~2h30         out Tue 01:34 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Other work in progress  ───────────────────────────────────────────────────────────────────────╮
+│ 3 in progress  ·  1 paused  ·  next to finish: Docs site refresh  15:33                          │
+│                                                                                                  │
+│ item                             stages       stage            progress                      eta │
+│ Nightly data import · 1,2…        ○─○         import?          ━━━━━━━━   0%                   — │
+│ Docs site refresh                 ○─○         queued           ━━━━━━━━   0%       ~1h20 · 15:33 │
+│ Dependency upgrades               ○─○         paused           ━━━━━━━━   0%                   — │
+│ Benchmarks after upgrades          ○          after docs       ━━━━━━━━   0%       ~2h00 · 16:13 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Repository  ───────────────────────────────────────────────────────────────────────────────────╮
+│ main         3f2a9c1 Wire the export button to the new endpoint                                  │
+│ unpushed     2 commits                                                                           │
+│ branches     1  ·  2 worktrees                                                                   │
+│ pull reqs    …                                                                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Agents at work  ───────────────────────────────────────────────────────────────────────────────╮
+│ agent                   for    running    active  doing now                                      │
+│ sweep:part-06           Sweep     3h00    2m ago  Bash · Sweep shard 6                           │
+│ sweep:part-07           Sweep     3h00    2m ago  Bash · Sweep shard 7                           │
+│ sweep:part-08           Sweep     3h00    3m ago  Bash · Sweep shard 8                           │
+│ sweep:part-00           Sweep     3h00  1h00 ago  Bash · Sweep shard 0                           │
+│ sweep:part-01           Sweep     3h00  1h01 ago  Bash · Sweep shard 1                           │
+│ sweep:part-02           Sweep     3h00  1h02 ago  Bash · Sweep shard 2                           │
+│ sweep:part-03           Sweep     3h00  1h03 ago  Bash · Sweep shard 3                           │
+│ sweep:part-04           Sweep     3h00  1h04 ago  Bash · Sweep shard 4                           │
+│ sweep:part-05           Sweep     3h00  1h05 ago  Bash · Sweep shard 5                           │
+│ +11 more · quietest 6m                                                                           │
+╰───────────────────────────────────────────────────────────────────────────────────── 20 running ─╯
+╭─  Model usage  ──────────────────────────────────────────────────────────────────────────────────╮
+│ plan         limits: no data yet                                                                 │
+│                                                                                                  │
+│ tokens                            output  input  cache writes  cache reads                       │
+│               counting the session logs…                                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+Key: ━━ done   ━━ < 1 h   ━━ < 4 h   ━━ > 4 h   ━━ failed                  ● safe to switch networks

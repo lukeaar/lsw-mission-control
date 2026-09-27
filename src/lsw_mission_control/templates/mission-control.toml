@@ -1,0 +1,19 @@
+# lsw-mission-control config for {label} (every key: the engine's docs/config.md).
+# Safe to commit: it holds no secrets (ssh and gh authenticate from their own stores).
+schema = 1
+
+[project]
+name = {name}
+# title = {title}                 # the chip at the top left
+
+{github_block}
+# [release]
+# tag_row = "Tag {{release}}"       # the last row of the release panel
+
+# [[plugins]]                     # a project panel: docs/plugins.md
+# name = "my-plugin"
+# file = "mc_myplugin.py"
+# class = "MyPlugin"
+#
+# [plugins.options]
+# host = "..."

@@ -1,0 +1,6 @@
+{
+  "_about": "Read by the dashboard on every refresh: edit freely, no restart needed. release = the release being built. items = what the release waits for (key -> agent labels build:/review:/fix:<key>; flags: 'after:<key>', 'after_all', 'owner_ok'; 'before': stages that precede the build; key null = done). other = work in progress that is not a release prerequisite (stage = [name, label | [labels] | null | {progress, total}, minutes]; labels may be 'wf_<run>/label'; 'paused': true, 'after': '<name>', 'after_server': true). next (optional) = the release after this one: {release, about, items: [{key, name, group, before, build, review, fix, flags}]}. Plugins may own more keys. Schema: the engine's docs/plan-schema.md.",
+  "release": "0.1.0",
+  "items": [],
+  "other": []
+}

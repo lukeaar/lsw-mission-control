@@ -1,0 +1,36 @@
+ DEMO   mission control   Mon 21 Sep · 14:13:20
+
+╭─  Waiting on you  ───────────────────────────────────────────────────────────╮
+│ ✓ nothing is waiting on you                                                  │
+╰──────────────────────────────────────────────────── updated 14:12 · 30s ago ─╯
+╭─  Release 0.1.0  ────────────────────────────────────────────────────────────╮
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 0% of the release done  ·  0/0 items ready          │
+│                          release out 20:13 (in 6h00)                         │
+│                                                                              │
+│ item         stages       stage            progress                      eta │
+│                                                                              │
+│ Final…  after all above   from now         takes ~3h30            done 17:43 │
+│ Tag 0…  CI, tag, release  from 17:43       takes ~2h30             out 20:13 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─  Other work in progress  ───────────────────────────────────────────────────╮
+│ 0 in progress                                                                │
+│                                                                              │
+│ item         stages       stage            progress                      eta │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─  Repository  ───────────────────────────────────────────────────────────────╮
+│ main         …                                                               │
+│ unpushed     ? commits                                                       │
+│ branches     0  ·  0 worktrees                                               │
+│ pull reqs    …                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─  Agents at work  ───────────────────────────────────────────────────────────╮
+│ agent              for  running  active  doing now                           │
+│ no agents running                                                            │
+╰────────────────────────────────────────────────────────────────── 0 running ─╯
+╭─  Model usage  ──────────────────────────────────────────────────────────────╮
+│ plan         limits: no data yet                                             │
+│                                                                              │
+│ tokens                            output  input  cache writes  cache reads   │
+│               counting the session logs…                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Key: ━━ done   ━━ < 1 h   ━━ < 4 h   ━━ > 4 h   ━━ failed● safe to switch networ

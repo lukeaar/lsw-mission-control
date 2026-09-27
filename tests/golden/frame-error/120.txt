@@ -1,0 +1,55 @@
+ DEMO   mission control   Mon 21 Sep · 14:13:20
+
+╭─  Waiting on you · 2  ───────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 1. Pricing: pick one of the three plans on the sheet → https://example.org/sheet/42 (say 'priced')                   │
+│ 2. Approve the security review scope before it starts                                                                │
+╰───────────────────────────────────────────────────────────────────────────────────────────── updated 14:08 · 5m ago ─╯
+╭─  Mission control error  ────────────────────────────────────────────────────────────────────────────────────────────╮
+│ KeyError: 'items'   engine.py line NNN in release_row                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Other work in progress  ───────────────────────────────────────────────────────────────────────────────────────────╮
+│ 3 in progress  ·  1 paused  ·  next to finish: Docs site refresh  14:53                                              │
+│                                                                                                                      │
+│ item                                    stages       stage            progress                                   eta │
+│ Nightly data import · 1,200 files        ◉─○         import           ━━━━━━━━━━━━━━━━━━━━━  55%       ~2h30 · 16:43 │
+│ Docs site refresh                        ◉─○         draft            ━━━━━━━━━━━━━━━━━━━━━  50%        ~40m · 14:53 │
+│ Dependency upgrades                      ◉─○         paused           ━━━━━━━━━━━━━━━━━━━━━  46%                   — │
+│ Benchmarks after upgrades                 ○          after docs       ━━━━━━━━━━━━━━━━━━━━━   0%       ~1h20 · 15:33 │
+│                                                                                                                      │
+│ also in motion                                                                                                       │
+│ ◌ Log rotation on the build box (a one-off, no plan row)                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Stub · stubhost  ─────────────────────────────────────╮ ╭─  Repository  ───────────────────────────────────────────╮
+│ host         stubhost                                   │ │ main         3f2a9c1 Wire the export button to the new … │
+│ import       ━━━━━━━━━━━━━━━━━━━━━━━━ 60%               │ │ unpushed     2 commits                                   │
+│ plan key     none                                       │ │ branches     1  ·  2 worktrees                           │
+│                                                         │ │ pull reqs    3 open  ·  2 from bots · 1 draft            │
+│                                                         │ │ last CI      CI ✓ c0ffee00 · 1h40 ago                    │
+│                                                         │ │ last release v1.3.0 · 3d00h ago                          │
+╰──────────────────────────────────────── updated 1m ago ─╯ ╰──────────────────────────────────────────────────────────╯
+╭─  Agents at work  ───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ agent          for                running   active  doing now                                                        │
+│ fix:export     Export to CSV          20m  40s ago  Edit · src/export/csv.py                                         │
+│ docs:draft     Docs site refresh      40m   2m ago  Write · docs/guide/export.md                                     │
+│ build:startup  Faster startup        2h30   4m ago  Bash · Profile the cold start                                    │
+│                                                                                                                      │
+│ test suites                                                                                                          │
+│ startup-bench  ━━━━━━━━━━ 42%                  1m ago                                                                │
+│ Export to CSV  412 passed, 3 skipped in 81.2s  3m ago                                                                │
+│ a11y-suite     2 failed, 88 passed in 12.1s    50m ago                                                               │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────── 3 running ─╯
+╭─  Model usage  ───────────────────────────────────────────────────────────────────────╮ ╭────────────────────────────╮
+│ 5-hour       ▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱   42%   resets 16:13 · in 2h00                  │ │         ⢀⣄                 │
+│ weekly       ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱   81%   resets Thu 14:13 · in 3d00h             │ │        ⢀⣾⢿⡆                │
+│                                                                                       │ │       ⢀⣾⠏⠘⣿⡀               │
+│ tokens        output  input  cache writes  cache reads                                │ │      ⢀⣾⠏  ⠹⣧               │
+│ last 5 h        350k   1.2k          2.4M          41M                                │ │     ⢀⣾⠏    ⢻⣆              │
+│ today           610k   2.1k          4.1M          88M                                │ │    ⢀⣾⠏     ⠈⣿⡄             │
+│ 7 days          4.9M    52k          120M         2.3B                                │ │   ⢀⣾⠏       ⠸⣷       ⢀⣀⡀   │
+│                                                                                       │ │  ⢀⣾⠏         ⢻⣇     ⣰⡟⠙⢿⡄  │
+│ by model      last 5 h  today  7 days  share · 7 days                                 │ │ ⢀⣾⠏          ⠈⢿⡄   ⢰⡿  ⠘⣿⡀ │
+│ Opus              300k   520k    4.1M             84%                                 │ │ ⠈⠉            ⠘⣷  ⢀⣿⠃   ⠉⠁ │
+│ Sonnet             50k    90k    700k             14%                                 │ │                ⠹⣧⣀⣾⠏       │
+│ Haiku                0      0    100k              2%                                 │ │                 ⠈⠉⠁        │
+╰────────────────────────────────────────────── plan data as of 14:10 · 3m ago · probe ─╯ ╰────────────────── λ∿ 2026 ─╯
+Key: ━━ done   ━━ < 1 h   ━━ < 4 h   ━━ > 4 h   ━━ failed                                      ● safe to switch networks

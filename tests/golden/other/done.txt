@@ -1,0 +1,12 @@
+╭─  Other work in progress  ───────────────────────────────────────────────────────────────────────────────────────────╮
+│ 3 in progress  ·  1 paused  ·  next to finish: Nightly data import · 1,200 files  14:43                              │
+│                                                                                                                      │
+│ item                                    stages       stage            progress                                   eta │
+│ Nightly data import · 1,200 files        ●─○         queued           ━━━━━━━━━━━━━━━━━━━━━   0%        ~30m · 14:43 │
+│ Docs site refresh                        ◉─○         draft            ━━━━━━━━━━━━━━━━━━━━━  50%        ~40m · 14:53 │
+│ Dependency upgrades                      ◉─○         paused           ━━━━━━━━━━━━━━━━━━━━━  46%                   — │
+│ Benchmarks after upgrades                 ○          after docs       ━━━━━━━━━━━━━━━━━━━━━   0%       ~1h20 · 15:33 │
+│                                                                                                                      │
+│ also in motion                                                                                                       │
+│ ◌ Log rotation on the build box (a one-off, no plan row)                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

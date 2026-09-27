@@ -1,0 +1,8 @@
+ DEMO   mission control   Mon 21 Sep · 14:13:20   status_notes.json not loaded (JSONDecodeError: Illegal trailing comma 
+before end of object: line 1 column 24 (char 23))
+
+╭─  Waiting on you  ───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ? the notes file did not load (see the title)                                                                        │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────── not loaded ─╯
+╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 29% of the release done  ·  1/6 items ready  ·  1 failed  ·  1 overrun                      │

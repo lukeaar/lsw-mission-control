@@ -1,0 +1,8 @@
+ DEMO   mission control   Mon 21 Sep · 14:13:20   status_notes.json not loaded (JSONDecodeError: Expecting value: line 1
+column 280 (char 279))
+
+╭─  Waiting on you · 2  ───────────────────────────────────────────────────────────────────────────────────────────────╮
+│ 1. Pricing: pick one of the three plans on the sheet → https://example.org/sheet/42 (say 'priced')                   │
+│ 2. Approve the security review scope before it starts                                                                │
+╰───────────────────────────────────────────────────────────────────────────────────────── not loaded · showing 14:08 ─╯
+╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────────────────────────╮
