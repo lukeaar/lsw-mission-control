@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import time
 from pathlib import Path
 
 import pytest
@@ -232,3 +233,39 @@ def test_probe_with_a_fake_claude(tmp_path, monkeypatch):
 def test_probe_without_claude(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path))
     assert probe_usage(tmp_path / "usage") is None
+
+
+def test_a_silent_claude_is_killed_at_the_timeout(tmp_path, monkeypatch):
+    """A CLI that prints nothing must not hold the probe past its timeout (the read waits for a line)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    exe = bindir / "claude"
+    exe.write_text("#!/bin/sh\nexec sleep 30\n")
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    t0 = time.monotonic()
+    assert probe_usage(tmp_path / "usage", timeout_s=1) is None
+    assert time.monotonic() - t0 < 10
+
+
+def test_a_probe_that_comes_back_empty_is_retried_soon(tmp_path, monkeypatch):
+    """3 min, 6, 12, then the interval; a success or a fresh file resets the back-off."""
+    from lsw_mission_control.sources import usage_probe as up
+    answers = []
+    monkeypatch.setattr(up, "probe_usage", lambda *_a, **_k: answers.pop(0) if answers else None)
+    usage = tmp_path / "usage"
+    usage.mkdir()
+    probe = UsageProbe(usage)
+    sleeps = []
+    for _ in range(5):
+        probe.poll_once()
+        sleeps.append(probe.next_sleep())
+    assert sleeps == [180, 360, 720, 1200, 1200]
+    answers.append({"at": NOW, "rate_limits": {}, "source": "probe"})
+    probe.poll_once()
+    assert probe.next_sleep() == 20 * 60 and (usage / "usage.json").exists()
+    os.utime(usage / "usage.json", (NOW - 60, NOW - 60))
+    probe.poll_once()  # fresh: skipped, and the back-off forgotten
+    os.utime(usage / "usage.json", (NOW - 3600, NOW - 3600))
+    probe.poll_once()  # stale, and the probe comes back empty again: the first retry, not the fifth
+    assert probe.next_sleep() == 180

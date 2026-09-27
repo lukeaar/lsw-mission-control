@@ -48,6 +48,8 @@ Run each command bare (a pipe hides its exit code). All three must pass.
   never prints a token or the environment.
 - **Commits are authored with the owner's GitHub noreply address** (repo-local `user.email`), carry
   no `Co-Authored-By` trailer, and history is squashed to a clean commit before a first push.
+- **Push main to GitHub as soon as a change lands on it** (owner, 2026-09-27): the public repository
+  never lags the dashboard that is running. `gitleaks git` and `gitleaks dir .` run first, as above.
 - **Keep bytecode and caches out of the checkout** (it may live in a synced folder): pytest runs
   with `-p no:cacheprovider`, ruff's cache is in `~/.cache/lsw-mission-control/ruff`, and the venv's
   `lsw_mc_pycache.pth` sets `sys.pycache_prefix`.

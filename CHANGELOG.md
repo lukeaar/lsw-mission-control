@@ -18,6 +18,10 @@ plugins. Its render is identical on identical inputs; the differences are all on
 
 Fixed before the first release:
 
+- The usage probe tries again 3 min after a probe that came back with nothing (then 6, 12, up to
+  the 20-min interval) instead of waiting the whole interval, which let the plan data reach twice
+  its age; and a Claude CLI that goes silent is killed at the probe's timeout.
+
 - A config error names the file once, and a missing config says where it looked and that
   `lsw-mc init` writes one. Keys that loaded and then failed every frame or did nothing are refused
   with the key named (a placeholder other than `{release}` or `{scratch}`/`{root}`, a plugin name
