@@ -18,6 +18,9 @@ plugins. Its render is identical on identical inputs; the differences are all on
 
 Fixed before the first release:
 
+- A final merge done by hand can be recorded in the plan (`final_merge_by_hand`, docs/plan-schema.md):
+  a hotfix cut straight from main read "after all above", and the tag row put the release hours late.
+
 - The usage probe tries again 3 min after a probe that came back with nothing (then 6, 12, up to
   the 20-min interval) instead of waiting the whole interval, which let the plan data reach twice
   its age; and a Claude CLI that goes silent is killed at the probe's timeout.

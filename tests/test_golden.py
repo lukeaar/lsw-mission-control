@@ -118,6 +118,27 @@ def test_a_release_change_undone_keeps_the_final_merge(tmp_path):
     assert "took 2h00" in _row(plain, "Final merge") and "CI running" in _row(plain, "Tag 1.4.0")
 
 
+def test_a_final_merge_done_by_hand(tmp_path):
+    """A hotfix released by hand, with no final-merge workflow: the plan records when the merge was
+    done. The row reads "done by hand" and the tag row takes main's CI begun after it; a mark
+    naming another release is ignored, and a final merge a workflow runs wins over the mark."""
+    p = Project(tmp_path)
+    midway(p)
+    p.store["release_gh"] = gh_store(**TAG_PHASES["ci-running"])  # main's CI began 5 min ago
+    p.plan(release_plan(final_merge_by_hand={"release": "1.4.0", "at": ts(NOW - 10 * MIN)}))
+    plain, _ = testing.render_text(release_panel(p.engine().build_frame(120), 120)[0], 120)
+    assert "done by hand" in _row(plain, "Final merge") and "CI running" in _row(plain, "Tag 1.4.0")
+
+    p.plan(release_plan(final_merge_by_hand={"release": "1.3.0", "at": ts(NOW - 10 * MIN)}))
+    plain, _ = testing.render_text(release_panel(p.engine().build_frame(120), 120)[0], 120)
+    assert "after all above" in _row(plain, "Final merge") and "CI running" not in plain
+
+    p.plan(release_plan(final_merge_by_hand={"release": "1.4.0", "at": ts(NOW - 10 * MIN)}))
+    p.agent("build:final-merge", run="wf_merge", start_ago=20 * MIN, quiet_s=30)
+    plain, _ = testing.render_text(release_panel(p.engine().build_frame(120), 120)[0], 120)
+    assert "done by hand" not in plain and "◉" in _row(plain, "Final merge")
+
+
 @pytest.mark.parametrize("merge_done", [False, True])
 def test_the_tag_row_reads_mains_ci_only_after_the_final_merge(merge_done):
     from lsw_mission_control.render.release import tag_milestone

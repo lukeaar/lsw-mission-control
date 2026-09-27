@@ -118,7 +118,12 @@ def release_panel(f: Frame, width: int):
     # The final merge: tracked by its labels once a workflow runs it.
     fm = stages_progress([(s, f"{s}:{fm_cfg.key}", m) for s, m in fm_cfg.stages], labels, now=t_now, cal=None,
                          default_fix_share=rc.fix_share)
-    if fm.current == "done":
+    by_hand = fm.start is None and plan.final_merge_by_hand is not None
+    if by_hand:
+        # Done by hand (the plan says when): a hotfix released without a final-merge workflow.
+        at = plan.final_merge_by_hand
+        merge = {"status": "done", "start": at, "end": at, "fraction": 1.0}
+    elif fm.current == "done":
         merge = {"status": "done", "start": fm.start or t_now, "end": fm.end or t_now, "fraction": 1.0}
     elif fm.start is not None:
         merge = {"status": "failed" if fm.failed else "running", "start": fm.start,
@@ -141,7 +146,8 @@ def release_panel(f: Frame, width: int):
         finished_row(t, done)
     t.add_row("", "", "", "", "")
     milestone_row(t, fm_cfg.name, C.TEXT,
-                  Text("after all above", style=C.FAINT) if merge["status"] == "todo" else chips_of(fm.marks, True),
+                  Text("after all above", style=C.FAINT) if merge["status"] == "todo"
+                  else Text("done by hand", style=C.GREEN) if by_hand else chips_of(fm.marks, True),
                   merge, bar_w, "done", C.MUTED)
     tag_stages = Text(rc.tag_todo_text, style=C.FAINT) if tag["status"] == "todo" else Text(
         tag["phase"], style=C.GREEN if released else C.RED_SOFT if tag["status"] == "failed" else C.ACCENT_SOFT)

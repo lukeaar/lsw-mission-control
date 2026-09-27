@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Mapping, Sequence
 
+from lsw_mission_control.util import iso
+
 if TYPE_CHECKING:
     from lsw_mission_control.plugin import Plugin
 
@@ -65,6 +67,9 @@ class Plan:
     next: NextRelease | None = None
     plugin_data: Mapping[str, object] = field(default_factory=dict)
     pre: Mapping[str, tuple] = field(default_factory=dict)  # item key -> its stages before the build
+    # When this release's final merge was done by hand (a hotfix released without a final-merge
+    # workflow): `final_merge_by_hand` = {"release": ..., "at": ISO time}. Only the named release's.
+    final_merge_by_hand: float | None = None
 
     def before(self, key: str | None) -> list:
         """An item's stages before its build ([] for none)."""
@@ -177,8 +182,19 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
                                    tuple(str(f) for f in _list(it.get("flags", []), f"flags of {name!r}"))))
         nxt = NextRelease(str(n["release"]), str(n.get("about", "")), tuple(nitems))
     release = str(d["release"])
+    by_hand = None
+    if d.get("final_merge_by_hand") is not None:
+        fm = _obj(d["final_merge_by_hand"], "final_merge_by_hand")
+        if "release" not in fm or "at" not in fm:
+            raise ValueError('final_merge_by_hand needs "release" and "at" (an ISO time)')
+        try:
+            at = iso(str(fm["at"]))
+        except (TypeError, ValueError):
+            raise ValueError(f"final_merge_by_hand's at is not a time: {fm['at']!r}"[:120]) from None
+        # A mark left over from the release before is ignored, never carried into this one.
+        by_hand = at if str(fm["release"]) == release else None
     plugin_data = {p.name: p.parse_plan(d) for p in plugins}
-    return Plan(release, tuple(items), tuple(other), nxt, plugin_data, pre)
+    return Plan(release, tuple(items), tuple(other), nxt, plugin_data, pre, by_hand)
 
 
 class PlanLoader:

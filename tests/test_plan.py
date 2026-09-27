@@ -55,6 +55,19 @@ def test_parse_plan_shapes():
     assert m.stages == () and plan.next.about == "later"
 
 
+def test_final_merge_by_hand_is_this_releases_only():
+    plan = parse_plan({"release": "1.2.1", "items": [],
+                       "final_merge_by_hand": {"release": "1.2.1", "at": "2026-09-28T03:34:00+10:00"}})
+    assert plan.final_merge_by_hand == 1790530440.0
+    old = parse_plan({"release": "1.2.2", "items": [],
+                      "final_merge_by_hand": {"release": "1.2.1", "at": "2026-09-28T03:34:00+10:00"}})
+    assert old.final_merge_by_hand is None
+    assert parse_plan({"release": "1", "items": []}).final_merge_by_hand is None
+    for bad in ({"at": "2026-09-28T03:34:00+10:00"}, {"release": "1"}, {"release": "1", "at": "soon"}, "yesterday"):
+        with pytest.raises(ValueError):
+            parse_plan({"release": "1", "items": [], "final_merge_by_hand": bad})
+
+
 def test_after_live_is_another_name_for_after_server():
     plan = parse_plan({"release": "1", "items": [], "other": [
         {"name": "A", "after_live": True, "stages": [["job", None, 0]]},

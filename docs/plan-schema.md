@@ -117,6 +117,13 @@ straight away (back to the release it left) gives that release back its final me
 GitHub: CI on the remote main's HEAD once this release's merge is done, the tag, then the release
 workflow's run on it.
 
+A release whose final merge was done by hand (a hotfix cut straight from main, say) records it:
+`"final_merge_by_hand": {"release": "1.2.1", "at": "2026-09-28T03:34:00+10:00"}`. The row then reads
+"done by hand" from that time, and the tag row takes main's CI begun after it. The mark counts only
+for the release it names, so one left in the plan after the release changes is ignored, and a final
+merge a workflow runs for the release wins over it. A mark without both fields, or with an `at` that
+is not a time, is refused like any other typo.
+
 ## `status_notes.json`
 
 ```json
