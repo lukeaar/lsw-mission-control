@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Callable, Sequence
 
 from lsw_mission_control.agents import review_needs_fix
 from lsw_mission_control.theme import C
@@ -24,7 +24,8 @@ class Prog:
     def __init__(self, remaining: float | None, current: str, marks: list | None = None, failed: bool = False,
                  fraction: float = 0.0, over: float = 0.0, waiting: bool = False, start: float | None = None,
                  end: float | None = None, alert: bool = False) -> None:
-        self.remaining = remaining  # seconds left; None = not known (a live job is not answering)
+        self.remaining = remaining  # seconds left; None = not known (a live job is not answering, or
+        # it waits on work that has no finish time)
         self.current = current  # the running stage, "done", "queued", "after merge", "your go-ahead", …
         self.marks = marks or []  # one (symbol, colour) per stage
         self.failed = failed
@@ -35,6 +36,7 @@ class Prog:
         self.end = end  # when its last stage finished, once done
         self.alert = alert  # stuck: its stage shows in red
         self.paused = False  # held by the owner ("paused": true on an other item)
+        self.waits = False  # it runs after work that is not done: a tie for "next to finish" goes to that work
 
 
 class Calibration:
@@ -141,12 +143,22 @@ def eta_from_json(path: str | None, key: str, now: float) -> float | None:
 
 
 def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibration | None, default_fix_share: float,
-                    wait_before: float = 0.0, after: str = "", done_before: float = 0.0, paused: bool = False) -> Prog:
+                    wait_before: float | None = 0.0, after: str = "", done_before: float = 0.0,
+                    paused: bool = False) -> Prog:
     """Progress through a sequence of stages. `cal` scales planned minutes by the release's
     calibration (release items only; None elsewhere); `done_before` is work already behind the
     first stage. `paused` (held by the owner): an unfinished stage is held, not running or
-    failed, and its fill stops at its last activity."""
-    remaining = wait_before
+    failed, and its fill stops at its last activity.
+
+    `wait_before`/`after`: what the row still waits for (wait_for()): the time left of the work it
+    runs after, and that work's short name. The wait sits before the stages that have not begun:
+    what has begun runs on beside it, so the row's time left is max(its begun stages', the wait)
+    plus its stages not begun, never less than the wait. While nothing of its own runs, its stage
+    reads "after <name>"; a wait of None (that work has no finish time) leaves it none either."""
+    wait_unknown = wait_before is None
+    wait = 0.0 if wait_before is None else wait_before
+    remaining = 0.0  # the time left of its stages that have begun (running, failed, held, a job part-done)
+    queued = 0.0  # the time of its stages not begun: they come after the wait
     progressed = done_before  # seconds of the item's estimated work already behind it
     current = ""
     marks = []
@@ -171,7 +183,7 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                 progressed += (last - first) if first and last and last > first else minutes * 60
                 continue
             if n == 0 or first is None:
-                remaining += minutes * 60
+                queued += minutes * 60
                 marks.append(("○", C.FAINT))
                 continue
             elapsed = max(1.0, now - first)
@@ -200,7 +212,7 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                 marks.append(("–", C.GREEN))
                 continue
             share = (cal.fix_share if cal is not None else default_fix_share) if (name == "fix" and needs_fix is None) else 1.0
-            remaining += minutes * 60 * share
+            queued += minutes * 60 * share
             marks.append(("○", C.FAINT))
             continue
         prev_start = max(prev_start, latest)
@@ -245,14 +257,69 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                     end=max(ends) if ends else None)
     waiting = not current
     if waiting:
-        current = f"after {after}" if after and wait_before > 0 else "queued"
+        current = f"after {after}" if after else "queued"
+    remaining = max(remaining, wait) + queued
     fraction = progressed / (progressed + remaining) if (progressed + remaining) > 0 else 0.0
-    return Prog(remaining, current, marks, failed, fraction, max(0.0, over), waiting,
-                start=min(starts) if starts else None)
+    p = Prog(None if wait_unknown else remaining, current, marks, failed, fraction, max(0.0, over), waiting,
+             start=min(starts) if starts else None)
+    p.waits = bool(after)
+    return p
+
+
+def stages_started(stages: Sequence, labels: dict) -> bool:
+    """Any of the stages has begun: one of its agents is known, or its detached job has finished
+    a unit."""
+    for _n, spec, _m in stages:
+        if isinstance(spec, dict):
+            if progress_of(spec["progress"])[0]:
+                return True
+        elif any(x in labels for x in (spec if isinstance(spec, list) else [spec] if spec else [])):
+            return True
+    return False
+
+
+def wait_for(targets: Sequence[tuple[object, Prog]], *, rerun: bool = False) -> tuple[float | None, object] | None:
+    """What a row that runs after `targets` ((ref, progress) pairs) still waits for: None once
+    every one is done; otherwise (time left, ref) of the unfinished one that finishes last. The
+    time is None when an unfinished one has no finish time (stalled, paused, unknown) or has
+    failed (its row reads "needs rerun", with no time): the row then has none either, and never
+    reads as finishing before it. `rerun`: a failed one's time is its re-run's instead (the
+    release panel, whose finish time counts the re-run)."""
+    pending = [(ref, p) for ref, p in targets if p.current != "done"]
+    if not pending:
+        return None
+    unknown = next((ref for ref, p in pending if p.remaining is None or (p.failed and not rerun)), None)
+    if unknown is not None:
+        return None, unknown
+    ref, p = max(pending, key=lambda rp: rp[1].remaining)
+    return p.remaining, ref
+
+
+def in_wait_order(n: int, targets_of: Callable[[int], Sequence[int]],
+                  compute: Callable[[int, tuple[float | None, int] | None], Prog], *,
+                  rerun: bool = False) -> list[Prog]:
+    """Rows 0..n-1, each computed after the rows it runs after (`targets_of(i)`: their indexes),
+    so a row listed before its target still waits for it. `compute(i, wait)` gets wait_for() of
+    its targets (`rerun` as there). A cycle (a typo in the plan) is broken where it closes; the
+    rows still draw."""
+    out: list = [None] * n
+    path: set = set()
+
+    def visit(i: int) -> Prog:
+        if out[i] is None:
+            path.add(i)
+            targets = [(t, visit(t)) for t in targets_of(i) if 0 <= t < n and t not in path]
+            path.discard(i)
+            out[i] = compute(i, wait_for(targets, rerun=rerun))
+        return out[i]
+
+    for i in range(n):
+        visit(i)
+    return out
 
 
 def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Calibration, default_fix_share: float,
-                  wait_before: float = 0.0, after: str = "") -> Prog:
+                  wait_before: float | None = 0.0, after: str = "") -> Prog:
     """A release item: its "before" stages (measure, design), then build → review → fix,
     labelled build:<key> etc."""
     key = item.key
@@ -268,15 +335,7 @@ def item_started(plan: Plan, key: str | None, labels: dict) -> bool:
     """Any of the item's stages has begun (a before-stage's agent, or its job's progress file)."""
     if not key:
         return False
-    if any(f"{k}:{key}" in labels for k in ("build", "review", "fix")):
-        return True
-    for _n, spec, _m in plan.before(key):
-        if isinstance(spec, dict):
-            if progress_of(spec["progress"])[0]:
-                return True
-        elif any(x in labels for x in (spec if isinstance(spec, list) else [spec] if spec else [])):
-            return True
-    return False
+    return stages_started(plan.before(key) + [(k, f"{k}:{key}", 0) for k in ("build", "review", "fix")], labels)
 
 
 def item_minutes(plan: Plan, item: Item, cal: Calibration) -> float:

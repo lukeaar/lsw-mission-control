@@ -23,8 +23,10 @@ HAND, in the same turn as the change:
   in that item's `before` stages, never in `other`. Add an item when work joins the release, drop
   it when it leaves; correct a stage's minutes when measurements prove them wrong.
 - **Name workflow agents `build:<key>` / `review:<key>` / `fix:<key>`**, matching an item's key,
-  or the dashboard cannot track them. The release's final merge uses the key `<final-merge key>`.
-  A stopped workflow's `other` entry gets `"paused": true` until it is resumed.
+  or the dashboard cannot track them. The release's final merge uses the key `<final-merge key>`;
+  move the plan's `release` on once a release ships, before the next final merge starts (only a
+  final merge begun after the dashboard sees the change counts for the new release). A stopped
+  workflow's `other` entry gets `"paused": true` until it is resumed.
 - **The network indicator (bottom right) must always be right.** Before starting any
   network-dependent operation of a kind it does not recognise, add that kind FIRST: to the engine's
   `src/lsw_mission_control/net.py` (`NET_TOOLS` / `NET_SUBCOMMANDS`, plus a real ps line in

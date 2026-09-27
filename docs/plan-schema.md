@@ -52,15 +52,17 @@ item is common), so the plan can carry its own explanations.
   planned minutes (scaled by the release's calibration once 3 of a kind have finished).
 - `key: null` counts as done.
 - `before`: stages that precede the build (measure, design), in the stage shape below.
-- `flags`: `after:<key>` (queued until that item's time has passed), `after_all` (after the worst
-  of the rest), `owner_ok` (shows "your go-ahead" until it starts).
+- `flags`: `after:<key>` (one flag per item it runs after), `after_all` (after all of the rest),
+  `owner_ok` (shows "your go-ahead" until it starts). See "Waits" below.
 - A fix whose review found nothing of severity blocker/major/minor is skipped (`–`); until the
   review is done its time is weighted by the fix share.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 
 - `paused: true`: held by the owner — no finish time, and its idle agent is not a failure.
-- `after`: another other item's **name**; this one waits for its remaining time.
+- `after`: another other item's **name**; this one waits for it (see "Waits" below). A name the
+  plan no longer holds counts as done (a finished row leaves the plan). It has no effect on an
+  `after_server` item, which follows its live job.
 - `after_server: true` (alias `after_live`): the FIRST stage mirrors a plugin's live job (its share
   done, its time left, "stalled", or unknown while the plugin has not answered), so such an item
   needs at least that stage.
@@ -69,8 +71,25 @@ item is common), so the plan can carry its own explanations.
 
 Planned, not scheduled: no finish time until work on an item starts. Items are grouped by
 `group` (in order). A stage named `your …` with a null spec is the owner's ("wait on you").
-`after:<key>` shows `after <name>` while that item is unfinished. `build`/`review`/`fix` become
-stages only when their minutes are above 0.
+`after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below).
+`build`/`review`/`fix` become stages only when their minutes are above 0.
+
+### Waits
+
+The same rule for `after` (other), `after:<key>` and `after_all` (items) and `after:<key>` (next),
+until everything a row runs after is done:
+
+- While nothing of its own is running, its stage reads `after <name>` (the one of them that
+  finishes last).
+- It never finishes before them. Its stages not yet begun come after their time left; a stage it
+  began early runs on beside it. Its time left is the longer of the two, plus its stages not
+  yet begun.
+- If one of them has no finish time (stalled, paused, not reached, a plugin error, or, in Other
+  work and the next release, failed), the row has none either (`—`) and is never "next to finish".
+  A release item after a failed one counts that item's re-run, as the release's finish time does.
+- A tie for "next to finish" goes to the row that is not waiting.
+- A row listed before the one it waits for still waits for it. A cycle (a typo) is broken where it
+  closes.
 
 ### A stage: `[name, spec, minutes]`
 
@@ -89,8 +108,14 @@ past its estimate has at least 10 min left, or a quarter of its time so far.
 ### The final merge and the tag
 
 The final merge is tracked by `build:<key>`, `review:<key>` and `fix:<key>` for the configured
-`[release.final_merge] key` (default `final-merge`). The tag row reads GitHub: CI on the remote
-main's HEAD once the merge is done, the tag, then the release workflow's run on it.
+`[release.final_merge] key` (default `final-merge`). Every release has its own under the same
+labels: when `release` changes, the shipped release's final merge is dropped from the finished
+store, which records when the dashboard first saw the new release (`since`), and only a final merge
+begun after that counts for it (an earlier one still shows under Agents at work while it runs).
+Change `release` once the old one has shipped, before the new final merge starts. A change undone
+straight away (back to the release it left) gives that release back its final merge. The tag row reads
+GitHub: CI on the remote main's HEAD once this release's merge is done, the tag, then the release
+workflow's run on it.
 
 ## `status_notes.json`
 

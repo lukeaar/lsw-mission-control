@@ -5,13 +5,16 @@ import os
 
 import pytest
 
+from lsw_mission_control import testing
 from lsw_mission_control.agents import (
     FinishedStore,
+    final_merge_labels,
     findings_of,
     label_names,
     latest_by_label,
     review_needs_fix,
     scan_agents,
+    store_since,
     stored_ok,
     transcript_facts,
 )
@@ -143,8 +146,9 @@ def test_finished_store(tmp_path):
     plan2 = parse_plan({"release": "2", "items": [{"name": "Item A", "key": "a"}]})
     names2 = label_names(plan2, FinalMergeCfg())
     assert {a["label"] for a in store.merge([], plan2, names2)} == {"build:a", "fix:a"}
-    # (as it always was, the pruned store is saved with the next change, not on its own)
-    assert json.loads(path.read_text())["release"] == "1"
+    # saved at once: the store records when the new release began (it used to wait for the next change)
+    pruned = json.loads(path.read_text())
+    assert pruned["release"] == "2" and pruned["since"] == NOW
     store.merge([rec("review:a", aid="r1")], plan2, names2)
     kept = json.loads(path.read_text())
     assert kept["release"] == "2" and {r["label"] for r in kept["agents"].values()} == {"build:a", "fix:a", "review:a"}
@@ -207,3 +211,181 @@ def test_findings_and_review_needs_fix():
     assert review_needs_fix(None) is None and review_needs_fix(rec("r", status="running")) is None
     assert review_needs_fix(rec("r", result={"findings": [{"severity": "nit"}]})) is False
     assert review_needs_fix(rec("r", result={"findings": [{"severity": "major"}]})) is True
+
+
+# ── a release change and the final merge (every release has one of its own under the same labels) ──
+FM = final_merge_labels(FinalMergeCfg())
+SHIPPED_FM = [rec("build:final-merge", aid="m1", run="wf_merge", t0=NOW - 5 * HOUR, t1=NOW - 4 * HOUR),
+              rec("review:final-merge", aid="m2", run="wf_merge", t0=NOW - 4 * HOUR, t1=NOW - 3.5 * HOUR),
+              rec("fix:final-merge", aid="m3", run="wf_merge", t0=NOW - 3.5 * HOUR, t1=NOW - 3 * HOUR)]
+
+
+def merge(store, agents, plan, **kw):
+    return store.merge(agents, plan, label_names(plan, FinalMergeCfg()), release_bound=FM, **kw)
+
+
+def shipped_store(tmp_path):
+    """Release 1 shipped: its final merge is done and stored, and an item of the next release has begun."""
+    path = tmp_path / "finished.json"
+    plan1 = plan_with()
+    store = FinishedStore(path)
+    merge(store, SHIPPED_FM + [rec("build:a", aid="b1"), rec("build:n", aid="n1", t0=NOW - 2 * HOUR, t1=NOW - HOUR)], plan1)
+    assert {r["label"] for r in json.loads(path.read_text())["agents"].values()} >= FM
+    return path, store
+
+
+def plan2():
+    """Release 2: the next release's item N is now this one's (its build:n carries over)."""
+    return parse_plan({"release": "2", "items": [{"name": "Next N", "key": "n", "build": 5}],
+                       "next": {"release": "3", "items": []}})
+
+
+def test_a_release_change_drops_the_final_merge_and_records_when_it_began(tmp_path):
+    path, store = shipped_store(tmp_path)
+    labels = latest_by_label(merge(store, [], plan2()), NOW, 25 * MIN)
+    assert not FM & set(labels)  # the shipped release's final merge is not this one's
+    saved = json.loads(path.read_text())
+    assert saved["release"] == "2" and saved["since"] == NOW  # saved at once
+    assert {r["label"] for r in saved["agents"].values()} == {"build:n"}
+
+
+def test_a_label_moving_from_next_to_items_keeps_its_history(tmp_path):
+    path, store = shipped_store(tmp_path)
+    labels = latest_by_label(merge(store, [], plan2()), NOW, 25 * MIN)
+    assert labels["build:n"]["status"] == "done" and labels["build:n"]["id"] == "n1"
+
+
+def test_the_scan_never_brings_the_shipped_final_merge_back(tmp_path):
+    """the journals still hold the shipped release's final merge (two days' window): found again,
+    it must not read as this release's, nor be stored again. Agents at work still sees it."""
+    path, store = shipped_store(tmp_path)
+    p2 = plan2()
+    merge(store, [], p2)
+    before = path.read_text()
+    out = merge(store, SHIPPED_FM + [rec("build:n", aid="n1", t0=NOW - 2 * HOUR, t1=NOW - HOUR)], p2)
+    assert path.read_text() == before  # nothing new to store
+    assert not FM & set(latest_by_label(out, NOW, 25 * MIN))
+    assert sorted(a["label"] for a in out if a.get("earlier_release")) == sorted(FM)
+    # a later refresh (the clock has moved) does not move `since`
+    testing.freeze(NOW + HOUR)
+    merge(store, SHIPPED_FM, p2)
+    assert json.loads(path.read_text())["since"] == NOW
+
+
+def test_a_final_merge_begun_after_the_change_is_tracked(tmp_path):
+    path, store = shipped_store(tmp_path)
+    p2 = plan2()
+    merge(store, [], p2)
+    testing.freeze(NOW + 3 * HOUR)
+    new = rec("build:final-merge", status="running", aid="m9", run="wf_merge2", t0=NOW + 2 * HOUR, t1=NOW + 3 * HOUR - 30)
+    out = merge(store, SHIPPED_FM + [new], p2)
+    labels = latest_by_label(out, NOW + 3 * HOUR, 25 * MIN)
+    assert labels["build:final-merge"]["id"] == "m9" and "review:final-merge" not in labels
+    assert [r["id"] for r in json.loads(path.read_text())["agents"].values() if r["label"] in FM] == ["m9"]
+    # its journal leaves the window: the store still has it
+    labels = latest_by_label(merge(store, [], p2), NOW + 3 * HOUR, 25 * MIN)
+    assert labels["build:final-merge"]["id"] == "m9"
+
+
+def test_a_store_written_before_since_was_kept_still_works(tmp_path):
+    """no "since": everything in it counts, as it always did (a store can be hand-migrated)."""
+    path = tmp_path / "finished.json"
+    plan = plan_with()
+    old = {"release": "1", "agents": {f"{r['run']}/{r['id']}": {k: v for k, v in r.items() if k not in ("action", "logs")}
+                                      for r in SHIPPED_FM}}
+    path.write_text(json.dumps(old))
+    store = FinishedStore(path)
+    labels = latest_by_label(merge(store, SHIPPED_FM, plan), NOW, 25 * MIN)
+    assert FM <= set(labels) and "since" not in json.loads(path.read_text())
+    # a release change from it starts `since`
+    merge(store, SHIPPED_FM, plan2())
+    assert json.loads(path.read_text())["since"] == NOW
+    # hand-migrated: since set, its final merge dropped
+    migrated = {"release": "1", "since": NOW - 2 * HOUR, "agents": {}}
+    path.write_text(json.dumps(migrated))
+    assert not FM & set(latest_by_label(merge(store, SHIPPED_FM, plan), NOW, 25 * MIN))
+    assert json.loads(path.read_text()) == migrated
+
+
+@pytest.mark.parametrize("since, want", [(None, 0.0), (0, 0.0), (NOW, NOW), ("x", 0.0), (True, 0.0), (float("nan"), 0.0),
+                                         (-5, 0.0), (NOW + 1, 0.0), (NOW * 1000, 0.0)])
+def test_store_since(since, want):
+    store = {"release": "1", "agents": {}} if since is None else {"release": "1", "since": since, "agents": {}}
+    assert store_since(store) == want
+    assert store_since(None) == 0.0
+
+
+def test_a_since_later_than_now_never_hides_this_releases_final_merge(tmp_path):
+    """milliseconds typed in a hand migration: read as no `since` (everything counts), where it
+    would hide every final merge begun before it, this release's own included, with nothing to say why"""
+    path = tmp_path / "finished.json"
+    path.write_text(json.dumps({"release": "1", "since": NOW * 1000, "agents": {}}))
+    running = rec("build:final-merge", status="running", aid="m9", run="wf_merge2", t0=NOW - 10 * MIN, t1=NOW - 30)
+    labels = latest_by_label(merge(FinishedStore(path), [running], plan_with()), NOW, 25 * MIN)
+    assert labels["build:final-merge"]["id"] == "m9"
+    assert [r["id"] for r in json.loads(path.read_text())["agents"].values()] == ["m9"]
+
+
+def at_release_one(tmp_path):
+    """Release 1 (begun 6 h ago) with its final merge done, and an item of release 2 begun."""
+    path = tmp_path / "finished.json"
+    records = SHIPPED_FM + [rec("build:a", aid="b1"), rec("build:n", aid="n1", t0=NOW - 2 * HOUR, t1=NOW - HOUR)]
+    path.write_text(json.dumps({"release": "1", "since": NOW - 6 * HOUR, "agents": {
+        f"{r['run']}/{r['id']}": {k: v for k, v in r.items() if k not in ("action", "logs")} for r in records}}))
+    return path, FinishedStore(path)
+
+
+def test_a_release_moved_straight_back_gets_its_final_merge_back(tmp_path):
+    """a typo in the plan's release fixed a minute later, or a move undone when the tag fails: the
+    release gets back what the change dropped and its own `since`, even with its journals gone.
+    A fresh `since` lost its final merge for good (the journals' copy read as an earlier release's)."""
+    path, store = at_release_one(tmp_path)
+    merge(store, [], plan2())
+    moved = json.loads(path.read_text())
+    assert moved["since"] == NOW and moved["previous"]["release"] == "1" and moved["previous"]["since"] == NOW - 6 * HOUR
+    assert {r["label"] for r in moved["previous"]["agents"].values()} == FM | {"build:a"}
+    testing.freeze(NOW + MIN)
+    labels = latest_by_label(merge(store, [], plan_with()), NOW + MIN, 25 * MIN)  # the store alone
+    assert FM <= set(labels) and labels["build:final-merge"]["id"] == "m1" and labels["build:a"]["id"] == "b1"
+    back = json.loads(path.read_text())
+    assert back["release"] == "1" and back["since"] == NOW - 6 * HOUR and back["previous"]["release"] == "2"
+    # the journals still hold it: it counts, and is not an earlier release's
+    out = merge(store, SHIPPED_FM, plan_with())
+    assert not any(a.get("earlier_release") for a in out) and FM <= set(latest_by_label(out, NOW + MIN, 25 * MIN))
+    # moved on again: release 2 is where it was, its `since` included
+    merge(store, [], plan2())
+    assert json.loads(path.read_text())["since"] == NOW
+
+
+def test_a_release_moved_on_twice_starts_afresh(tmp_path):
+    """only a move straight back restores: 1 -> 2 -> 3 is two new releases"""
+    path, store = at_release_one(tmp_path)
+    merge(store, [], plan2())
+    testing.freeze(NOW + HOUR)
+    p3 = parse_plan({"release": "3", "items": [{"name": "Next N", "key": "n", "build": 5}]})
+    labels = latest_by_label(merge(store, SHIPPED_FM, p3), NOW + HOUR, 25 * MIN)
+    assert not FM & set(labels) and labels["build:n"]["id"] == "n1"
+    saved = json.loads(path.read_text())
+    assert saved["since"] == NOW + HOUR and saved["previous"]["release"] == "2"
+
+
+def test_a_stand_in_plan_never_starts_a_release(tmp_path):
+    """a broken plan at start-up: its release "?" is no release change, so the final merge's records
+    stay, `since` stays, and nothing is written."""
+    path, store = shipped_store(tmp_path)
+    before = path.read_text()
+    out = store.merge(SHIPPED_FM, EMPTY_PLAN, label_names(EMPTY_PLAN, FinalMergeCfg()), loaded=False, release_bound=FM)
+    assert path.read_text() == before and "since" not in json.loads(before)
+    assert FM <= set(latest_by_label(out, NOW, 25 * MIN))
+    # the same with a release already begun: its `since` still applies
+    merge(store, [], plan2())
+    before = path.read_text()
+    out = store.merge(SHIPPED_FM, EMPTY_PLAN, label_names(EMPTY_PLAN, FinalMergeCfg()), loaded=False, release_bound=FM)
+    assert path.read_text() == before and not FM & set(latest_by_label(out, NOW, 25 * MIN))
+
+
+def test_readonly_never_writes_a_release_change(tmp_path):
+    path, _store = shipped_store(tmp_path)
+    before = path.read_text()
+    out = merge(FinishedStore(path, readonly=True), SHIPPED_FM, plan2())
+    assert path.read_text() == before and not FM & set(latest_by_label(out, NOW, 25 * MIN))

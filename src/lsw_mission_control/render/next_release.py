@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from rich.console import Group
 from rich.text import Text
 
-from lsw_mission_control.progress import short_name, stages_progress
+from lsw_mission_control.progress import Prog, in_wait_order, short_name, stages_progress
 from lsw_mission_control.render.widgets import pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import now
@@ -28,28 +28,51 @@ def next_panel(f: Frame, width: int):
     t, bar_w = work_table("stages", width, f.plan, rc.final_merge, stages_w=max(16, 2 * most - 1))
     live = done = waiting_owner = 0
     group = None
-    progs: dict = {}
-    names = {i.key: i.name for i in nxt.items if i.key}
-    for item in nxt.items:
+    # Each item after the items it runs after (one listed before them still waits for them). An
+    # item not started has no finish time (planned, not scheduled); one begun never finishes before
+    # the work it runs after, and has no finish time while that work has none.
+    index: dict = {}
+    for i, item in enumerate(nxt.items):
+        if item.key:
+            index.setdefault(item.key, i)
+    waits: dict = {}
+    begun: dict = {}
+    owner_at: dict = {}
+
+    def targets_of(i: int) -> list[int]:
+        return [index[fl[6:]] for fl in nxt.items[i].flags if fl.startswith("after:") and fl[6:] in index]
+
+    def compute(i: int, wait) -> Prog:
+        item = nxt.items[i]
+        waits[i] = wait
+        after = "" if wait is None else short_name(nxt.items[wait[1]].name, f.plan.items)
+        p = stages_progress(item.stages, labels, now=t_now, cal=None, default_fix_share=rc.fix_share,
+                            wait_before=0.0 if wait is None else wait[0], after=after)
+        begun[i] = any(m[0] in ("●", "◉", "✕", "–") for m in p.marks)
+        # The first stage not yet behind it: when it is the owner's ("your ...", no agent), nothing
+        # is running and it waits on nothing else, the row waits on the owner, wherever that stage
+        # sits in the row: no finish time (what runs after it has none either).
+        nxt_i = next((k for k, m in enumerate(p.marks) if m[0] == "○"), None)
+        running = any(m[0] == "◉" for m in p.marks)
+        owner_at[i] = nxt_i if (begun[i] and not running and wait is None and nxt_i is not None
+                                and item.stages[nxt_i][1] is None
+                                and item.stages[nxt_i][0].lower().startswith("your")) else None
+        if not begun[i] or owner_at[i] is not None:
+            p.remaining = None
+        return p
+
+    progs = in_wait_order(len(nxt.items), targets_of, compute)
+    for i, item in enumerate(nxt.items):
         if item.group != group:
             group = item.group
             if group:
                 t.add_row(Text(group, style=C.FAINT), "", "", "", "")
-        p = stages_progress(item.stages, labels, now=t_now, cal=None, default_fix_share=rc.fix_share)
-        progs[item.key] = p
-        started = any(m[0] in ("●", "◉", "✕", "–") for m in p.marks)
-        deps = [fl[6:] for fl in item.flags if fl.startswith("after:")]
-        blocking = [d for d in deps if d in progs and progs[d].current != "done"]
-        # The first stage not yet behind it: when it is the owner's ("your ...", no agent) and
-        # nothing is running, the row waits on the owner, wherever that stage sits in the row.
-        nxt_i = next((i for i, m in enumerate(p.marks) if m[0] == "○"), None)
-        running = any(m[0] == "◉" for m in p.marks)
-        mid_owner = (started and not running and nxt_i is not None and item.stages[nxt_i][1] is None
-                     and item.stages[nxt_i][0].lower().startswith("your"))
+        p, started, wait = progs[i], begun[i], waits[i]
+        blocking = wait is not None
         if p.current == "done":
             done += 1
-        elif mid_owner and not blocking:
-            p.current, p.remaining, p.waiting = item.stages[nxt_i][0], None, True
+        elif owner_at[i] is not None:
+            p.current, p.waiting = item.stages[owner_at[i]][0], True
             waiting_owner += 1
         elif not started:
             # Planned, not scheduled: no finish time. The first unfinished stage says what it waits
@@ -58,7 +81,7 @@ def next_panel(f: Frame, width: int):
             owner = (first is not None and first[1] is None and first[0].lower().startswith("your")
                      and not blocking)
             if blocking:
-                p.current = f"after {short_name(names.get(blocking[0], blocking[0]), f.plan.items)}"
+                p.current = f"after {short_name(nxt.items[wait[1]].name, f.plan.items)}"
             elif owner:
                 p.current = first[0]
             elif first is not None and first[1] is None:

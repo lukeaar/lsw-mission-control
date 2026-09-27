@@ -23,10 +23,11 @@ lsw-mission-control/
     store.py              Store (thread-safe; get/set/update/snapshot, data under lock)
     plan.py               parse_stage, parse_plan, Item/OtherItem/NextItem/NextRelease/Plan, PlanLoader
     notes.py              Notes, read_notes, NotesLoader
-    agents.py             transcript_facts, scan_agents, label_names, findings_of, stored_ok, FinishedStore,
-                          latest_by_label, review_needs_fix
+    agents.py             transcript_facts, scan_agents, final_merge_labels, label_names, findings_of, stored_ok,
+                          store_since, FinishedStore, latest_by_label, review_needs_fix
     progress.py           Prog, Calibration, calibrate, progress_of, eta_from_json, stages_progress,
-                          item_progress, item_started, item_minutes, short_name
+                          stages_started, wait_for, in_wait_order, item_progress, item_started, item_minutes,
+                          short_name
     net.py                NetRules, net_label, NET_CASES, FLAG_CASES, is_dashboard, etime_seconds,
                           network_critical, fit_list, network_flag, flag_verdict, check_net_cases
     plugin.py             Plugin, PluginContext, CliFlag, LiveJob, SideCard, Flags, validate_options, load_plugins
@@ -77,11 +78,16 @@ Plan(release, items, other, next, plugin_data, pre); Item(name, key, build, revi
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags)
 PlanLoader(path, plugins).refresh() -> Plan           # mtime-gated; a bad parse keeps the last good plan; .note
 Notes(waiting_on_owner, in_progress_elsewhere, mtime); NotesLoader(path).refresh() -> Notes
-FinishedStore(path, readonly).merge(agents, plan, names, loaded)
+FinishedStore(path, readonly).merge(agents, plan, names, loaded, release_bound)   # release_bound: the final
+                                                      # merge's labels; an agent of one begun before the
+                                                      # store's `since` comes back marked earlier_release
 Calibration(fix_share): factors{build,review,fix}, fix_share, n; get(stage) matches only those three names
 calibrate(cal, items, labels)                         # in place: a factor moves only at >= 3 samples,
                                                       # the fix share only at >= 3 reviews
 stages_progress(stages, labels, *, now, cal, default_fix_share, wait_before, after, done_before, paused)
+wait_for([(ref, Prog)], rerun) -> (seconds | None, ref) | None   # what a row still waits for; None:
+                                                      # nothing; a failed target has no time unless rerun
+in_wait_order(n, targets_of, compute, rerun) -> [Prog]   # each row after its targets (release, other, next)
 Frame(now, width, cfg, plan, plan_note, reload_note, notes, agents, labels, names, cal, store, flags,
       live_job, live_job_error, plugin_errors, notes_note)
 Engine(cfg, flags, *, readonly, plugins, load_errors, no_plugins)
@@ -162,7 +168,7 @@ alias of `after_server`. A notes file that does not load keeps the last good not
 |---|---|---|---|
 | `usage.json`, `tokens.json`, `probe-cwd/` | `$LSW_MC_USAGE_DIR` or `~/.cache/lsw-mission-control/` | account | status line, probe, every TokenCounter (atomic writes) |
 | `pycache/`, `ruff/` | `~/.cache/lsw-mission-control/` | machine | Python, ruff |
-| `finished.json` | `[cache] dir` (default `~/.cache/lsw-mission-control/projects/<name>`) | project | FinishedStore (never in read-only mode) |
+| `finished.json` | `[cache] dir` (default `~/.cache/lsw-mission-control/projects/<name>`) | project | FinishedStore (never in read-only mode): `{"release", "since", "agents", "previous"}` (`previous`: the release left at the last change, its `since` and the records the change dropped); `since` absent, or later than now, reads as 0 |
 | a plugin's own files | its `ctx.cache_dir` (the same folder) | project | the plugin |
 
 Tests and rehearsals point `--cache-dir`/`LSW_MC_CACHE_DIR` and `LSW_MC_USAGE_DIR` at copies:
@@ -244,12 +250,16 @@ Panels:
   tag row (`[release] tag_row`), `after:` / `after_all` / `owner_ok`, a `null` key is done; stage
   dots; each row's state; ETA colours and the Key; calibration (release items only, ≥ 3 samples,
   0.2–2.0, sticky, the fix share from ≥ 3 reviews); stage timing; the finished store (pruned on a
-  release change, malformed records dropped, a running record rewritten at most every 10 min);
+  release change and saved at once with `since`, the final merge's records dropped with the shipped
+  release's and given back if the release moves straight back, a final-merge agent begun before
+  `since` counted for no row, malformed records dropped,
+  a running record rewritten at most every 10 min); waits (plan-schema.md, "Waits": every `after:`
+  flag, a target listed later, a begun row, a target with no finish time or failed);
   silence over 25 min means stopped; the tag row's phases and timing (the median of successful
   runs, else `[release] fallback_minutes`); milestone wording.
 - Next release.
-- Other work in progress, with `after`, `after_server` (unknown, done, running, not live, stalled,
-  plugin error), paused rows, the head and `also in motion`.
+- Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
+  live, stalled, plugin error), paused rows, the head and `also in motion`.
 - The side row: plugin cards, then Repository.
 - Agents at work and the recent test suites.
 - Model usage: meters, stale data as a faint meter with a muted % and an amber `· as of HH:MM`,

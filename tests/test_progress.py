@@ -8,13 +8,17 @@ import pytest
 from lsw_mission_control.plan import parse_plan
 from lsw_mission_control.progress import (
     Calibration,
+    Prog,
     calibrate,
     eta_from_json,
+    in_wait_order,
     item_minutes,
     item_started,
     progress_of,
     short_name,
     stages_progress,
+    stages_started,
+    wait_for,
 )
 
 from conftest import NOW
@@ -93,8 +97,35 @@ def test_an_earlier_rerun_invalidates_later_stages():
 
 
 def test_after_text():
-    assert sp(STAGES, {}, wait_before=600, after="merge").current == "after merge"
-    assert sp(STAGES, {}, wait_before=0, after="merge").current == "queued"
+    p = sp(STAGES, {}, wait_before=600, after="merge")
+    assert p.current == "after merge" and p.waiting and p.remaining == 600 + (60 + 20 + 30 * 0.7) * 60
+    # a wait is shown whatever its length (the caller passes one only while the work is unfinished)
+    assert sp(STAGES, {}, wait_before=0, after="merge").current == "after merge"
+    assert sp(STAGES, {}).current == "queued"
+    # the work it runs after has no finish time: neither has this row
+    p = sp(STAGES, {}, wait_before=None, after="merge")
+    assert p.current == "after merge" and p.remaining is None and p.waiting and p.fraction == 0.0
+    assert p.waits and not sp(STAGES, {}).waits
+
+
+def test_a_wait_sits_before_the_stages_not_begun():
+    """begun early, a row still never finishes before the work it runs after: what has begun runs on
+    beside the wait, what has not comes after it"""
+    running = {"build:x": a("build:x", "running", NOW - 20 * MIN, NOW)}  # 40 min of build left
+    p = sp(STAGES, running, wait_before=90 * MIN, after="merge")
+    assert p.current == "build" and not p.waiting and p.remaining == (90 + 20 + 21) * 60
+    p = sp(STAGES, running, wait_before=10 * MIN, after="merge")
+    assert p.remaining == (40 + 20 + 21) * 60  # the wait ends first: its own build is what binds
+    # between its stages (build done), nothing of its own runs: the wait shows
+    built = {"build:x": a("build:x", t0=NOW - 30 * MIN, t1=NOW - 10 * MIN)}
+    p = sp(STAGES, built, wait_before=90 * MIN, after="merge")
+    assert p.current == "after merge" and p.waiting and p.remaining == (90 + 20 + 21) * 60
+    # a failed stage's re-run and a held stage have begun too
+    failed = {"build:x": a("build:x", "failed", NOW - 30 * MIN, NOW - 10 * MIN)}
+    assert sp(STAGES, failed, wait_before=90 * MIN, after="merge").remaining == (90 + 20 + 21) * 60
+    assert sp(STAGES, running, wait_before=90 * MIN, after="merge", paused=True).remaining == (90 + 20 + 21) * 60
+    # no finish time for the wait: none for the row, begun or not
+    assert sp(STAGES, running, wait_before=None, after="merge").remaining is None
 
 
 def test_calibration_is_sticky():
@@ -173,3 +204,53 @@ def test_item_helpers(tmp_path):
     assert short_name("merge", plan.items) == "merge" and short_name("Some Name", plan.items) == "some"
     assert short_name(None, plan.items) == ""
     assert short_name(" ", plan.items) == ""  # a blank name has no first word (it used to raise)
+
+
+def prog(remaining, current="build"):
+    return Prog(remaining, current)
+
+
+def test_wait_for_a_target_with_a_finish_time_without_one_and_finished():
+    assert wait_for([]) is None
+    assert wait_for([("a", Prog(0.0, "done"))]) is None  # finished: nothing to wait for
+    assert wait_for([("a", prog(600.0))]) == (600.0, "a")
+    assert wait_for([("a", prog(0.0, "your pick"))]) == (0.0, "a")  # unfinished, even with no time left
+    # several: the one that finishes last binds, wherever it is listed
+    assert wait_for([("a", prog(600.0)), ("b", prog(3600.0)), ("c", Prog(0.0, "done"))]) == (3600.0, "b")
+    # one has no finish time (stalled, paused, unknown): the wait has none either, and names it
+    assert wait_for([("a", prog(3600.0)), ("b", prog(None, "stalled"))]) == (None, "b")
+    assert wait_for([("b", Prog(0.0, "done")), ("a", prog(None, "paused"))]) == (None, "a")
+    # failed: its row reads "needs rerun", with no time, so the wait has none; the release panel
+    # (whose finish counts the re-run) asks for the re-run's time instead
+    failed = Prog(1800.0, "build failed", failed=True)
+    assert wait_for([("a", prog(3600.0)), ("f", failed)]) == (None, "f")
+    assert wait_for([("a", prog(3600.0)), ("f", failed)], rerun=True) == (3600.0, "a")
+    assert wait_for([("f", failed)], rerun=True) == (1800.0, "f")
+
+
+def test_in_wait_order_computes_targets_first_and_breaks_a_cycle():
+    seen = []
+
+    def compute(i, wait):
+        seen.append((i, wait))
+        return prog(100.0 * (i + 1) + (wait[0] if wait and wait[0] is not None else 0))
+
+    # 0 runs after 2 (listed later), 2 after 1: 1, then 2, then 0
+    out = in_wait_order(3, {0: [2], 1: [], 2: [1]}.__getitem__, compute)
+    assert [i for i, _w in seen] == [1, 2, 0]
+    assert seen[1] == (2, (200.0, 1)) and seen[2] == (0, (500.0, 2))
+    assert [p.remaining for p in out] == [600.0, 200.0, 500.0]
+    # a cycle (a typo): broken where it closes, every row still computed once; an unknown index is ignored
+    seen.clear()
+    out = in_wait_order(3, {0: [1], 1: [0], 2: [2, 7]}.__getitem__, compute)
+    assert sorted(i for i, _w in seen) == [0, 1, 2] and all(p is not None for p in out)
+    assert dict(seen)[2] is None
+
+
+def test_stages_started(tmp_path):
+    prog_file = tmp_path / "p.jsonl"
+    stages = [("wait", None, 0.0), ("job", {"progress": str(prog_file), "total": 3}, 10.0), ("check", ["c:1", "c:2"], 5.0)]
+    assert not stages_started(stages, {})
+    assert stages_started(stages, {"c:2": a("c:2", "running", NOW - 60, NOW)})
+    prog_file.write_text(json.dumps({"t": NOW - 60}) + "\n")
+    assert stages_started(stages, {})

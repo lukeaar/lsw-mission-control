@@ -7,7 +7,15 @@ from typing import TYPE_CHECKING
 from rich.console import Group
 from rich.text import Text
 
-from lsw_mission_control.progress import Prog, item_minutes, item_progress, item_started, short_name, stages_progress
+from lsw_mission_control.progress import (
+    Prog,
+    in_wait_order,
+    item_minutes,
+    item_progress,
+    item_started,
+    short_name,
+    stages_progress,
+)
 from lsw_mission_control.render.widgets import (
     METER_W,
     bar,
@@ -73,29 +81,36 @@ def release_panel(f: Frame, width: int):
     plan, labels, cal, rc = f.plan, f.labels, f.cal, f.cfg.release
     fm_cfg = rc.final_merge
     t_now = now()
-    rows: list[tuple[str, Prog]] = []
-    sizes: list[float] = []
-    left_by_key: dict = {}
-    for it in plan.items:
-        if "after_all" not in it.flags:
-            after = next((fl[6:] for fl in it.flags if fl.startswith("after:")), None)
-            started = item_started(plan, it.key, labels)
-            wait = 0.0 if started or after is None else left_by_key.get(after, 0.0)
-            p = item_progress(plan, it, labels, now=t_now, cal=cal, default_fix_share=rc.fix_share,
-                              wait_before=wait, after=short_name(after, plan.items))
-            left_by_key[it.key] = p.remaining
-            rows.append((it.name, p))
-            sizes.append(item_minutes(plan, it, cal))
-    before = max((p.remaining or 0.0 for _n, p in rows), default=0.0)
-    for it in plan.items:
-        if "after_all" in it.flags:
-            started = item_started(plan, it.key, labels)
-            p = item_progress(plan, it, labels, now=t_now, cal=cal, default_fix_share=rc.fix_share,
-                              wait_before=0.0 if started else before, after="all")
-            if "owner_ok" in it.flags and not started:
-                p.current, p.waiting = "your go-ahead", True
-            rows.append((it.name, p))
-            sizes.append(item_minutes(plan, it, cal))
+    # The rest first, then the after_all items (each waits for the worst of the rest), in plan order.
+    items = [it for it in plan.items if "after_all" not in it.flags]
+    last = len(items)
+    items += [it for it in plan.items if "after_all" in it.flags]
+    index: dict = {}
+    for i, it in enumerate(items[:last]):
+        if it.key is not None:
+            index.setdefault(it.key, i)
+
+    def targets_of(i: int) -> list[int]:
+        if i >= last:
+            return list(range(last))
+        return [index[fl[6:]] for fl in items[i].flags if fl.startswith("after:") and fl[6:] in index]
+
+    def compute(i: int, wait) -> Prog:
+        it = items[i]
+        # Until the work it runs after is done, begun or not, it never finishes before that work.
+        after = "" if wait is None else "all" if i >= last else short_name(items[wait[1]].key, plan.items)
+        p = item_progress(plan, it, labels, now=t_now, cal=cal, default_fix_share=rc.fix_share,
+                          wait_before=0.0 if wait is None else wait[0], after=after)
+        if i >= last and "owner_ok" in it.flags and not item_started(plan, it.key, labels):
+            p.current, p.waiting = "your go-ahead", True
+        return p
+
+    # A failed item's time is its re-run's (the release's finish counts it), so what runs after it waits that long.
+    progs = in_wait_order(len(items), targets_of, compute, rerun=True)
+    rows: list[tuple[str, Prog]] = [(it.name, p) for it, p in zip(items, progs)]
+    sizes: list[float] = [item_minutes(plan, it, cal) for it in items]
+    # A release item always has a finish time (it waits only on other release items, which have one,
+    # a failed one's counting its re-run).
     worst = max((p.remaining or 0.0 for _n, p in rows), default=0.0)
     gh_timing = f.store.get("gh_timing")
     run_min = float(rc.release_run_minutes)

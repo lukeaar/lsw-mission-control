@@ -55,6 +55,41 @@ Fixed before the first release:
   ran (it read "~0s · now", 100%, while the job still ran).
 - A detached job's progress line that is valid JSON but not an object is skipped (it failed every
   frame).
+- After a release change, the new release's final merge starts empty. The shipped release's final
+  merge used to carry over: the store kept its records, and the journals, still in the scan window,
+  brought it back. The new release's panel then showed it done, the tag row read main's CI, from
+  an unrelated commit, as the tag's ("CI running"), and the header promised the release within
+  the hour. Now:
+  - The finished store records when the dashboard first saw the release (`since`, epoch seconds),
+    drops the final merge's records at the change, and saves the change at once.
+  - A final-merge agent begun before `since` still shows under Agents at work, but no row counts it.
+  - A final merge begun after the change is tracked as before, and so is everything else that
+    carries over (an item that moved from `next` to `items` keeps its finished stages).
+  - A release changed and changed straight back (a typo, a move undone when the tag fails) gets
+    back what the change dropped, its final merge and its `since` included. It used to lose that
+    final merge for good.
+  - A store from before this change (no `since`), or one whose `since` is later than now (such as
+    milliseconds typed by hand), counts everything, as before. To apply the fix to a release
+    already under way, set `since` to the time of the change and drop the final-merge records by
+    hand.
+- A row that runs after other work (other's `after`, items' `after:<key>` and `after_all`, next's
+  `after:<key>`) never finishes before that work, and has no finish time (`—`) while that work has
+  none. Before, when the work it waits for lost its finish time (stalled, paused, not reached, a
+  plugin error), the row read "queued" with its own time and was "next to finish". In detail:
+  - Until that work is done, a row shows `after <name>` whenever nothing of its own is running.
+  - This now holds for a row that has begun early too. Its begun stages run on beside the wait,
+    and the stages it has not begun come after it: its time left is the longer of its running
+    stage and the wait, plus the stages not yet begun. Before, a begun release or next row showed
+    only its own time, and a begun row of other work added the whole wait to its own. The stages
+    after a plugin's live job (`after_server`) follow the same rule.
+  - Work that failed ("needs rerun", no time) counts as having no finish time for the rows after
+    it in Other work and the next release. Release items still count a failed item's re-run, as
+    the release's own finish time does.
+  - When two rows tie for "next to finish", the one that is not waiting is named.
+  - Every `after:<key>` flag counts (only the first did; the one that finishes last binds), and
+    a row listed before the work it runs after still waits for it.
+  - A wait shows even when the target has no time left but is not done (it read "queued").
+  - One rule in `progress.py` (`wait_for`, `in_wait_order`) serves every panel.
 
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
 `[[plugins]]` name; `validate_options` names the type it expected. A plugin loaded by module name

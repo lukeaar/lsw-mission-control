@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from rich.console import Group
 from rich.text import Text
 
-from lsw_mission_control.progress import Prog, short_name, stages_progress
+from lsw_mission_control.progress import Prog, in_wait_order, short_name, stages_progress
 from lsw_mission_control.render.widgets import pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import clock, now
@@ -20,14 +20,18 @@ def other_panel(f: Frame, width: int):
     plan, labels, rc = f.plan, f.labels, f.cfg.release
     t_now = now()
     share = rc.fix_share
-    rows: list[tuple[str, Prog]] = []
-    by_name: dict = {}
     job = f.live_job
-    for item in plan.other:
-        wait, after = 0.0, ""
-        dep = by_name.get(item.after)
-        if dep is not None and (dep.remaining or 0) > 0:
-            wait, after = dep.remaining, short_name(item.after, plan.items)
+    index: dict = {}
+    for i, item in enumerate(plan.other):
+        index.setdefault(item.name, i)
+
+    def targets_of(i: int) -> list[int]:
+        # A name the plan no longer holds is behind it: a finished row leaves the plan by hand.
+        after = plan.other[i].after
+        return [index[after]] if after in index else []
+
+    def compute(i: int, wait) -> Prog:
+        item = plan.other[i]
         stages = item.stages
         if item.after_server:
             first, rest = stages[0], stages[1:]
@@ -67,14 +71,20 @@ def other_panel(f: Frame, width: int):
                 elif job.eta is None:
                     p.remaining, p.current, p.alert = None, job.stalled_label, True
         else:
-            p = stages_progress(stages, labels, now=t_now, cal=None, default_fix_share=share, wait_before=wait,
-                                after=after, paused=item.paused)
+            # Until that work is done: "after <name>" while nothing of its own runs, and a finish
+            # never before that work's (begun or not); none while that work has none.
+            p = stages_progress(stages, labels, now=t_now, cal=None, default_fix_share=share,
+                                wait_before=0.0 if wait is None else wait[0],
+                                after="" if wait is None else short_name(plan.other[wait[1]].name, plan.items),
+                                paused=item.paused)
         if item.paused and p.current != "done":
             # Held by the owner: no finish time while it waits, and its idle agent (which reads as
             # failed once silent) is not a failure: its stage shows as held.
             p.current, p.failed, p.remaining, p.paused = "paused", False, None, True
-        by_name[item.name] = p
-        rows.append((item.name, p))
+        return p
+
+    rows: list[tuple[str, Prog]] = [(item.name, p) for item, p in
+                                    zip(plan.other, in_wait_order(len(plan.other), targets_of, compute))]
     live = [r for r in rows if r[1].current != "done"]
     t, bar_w = work_table("stages", width, plan, rc.final_merge)
     # Live rows first; the few finished ones keep their names (they leave the plan by hand).
@@ -89,7 +99,8 @@ def other_panel(f: Frame, width: int):
         phrases.append(Text(f"{nfailed} failed", style=C.RED_SOFT))
     timed = [r for r in live if r[1].remaining is not None and not r[1].failed]
     if timed:
-        soonest = min(timed, key=lambda r: r[1].remaining)
+        # A tie goes to the work finishing on its own: a row that waits can end with it, never first.
+        soonest = min(timed, key=lambda r: (r[1].remaining, r[1].waits))
         phrases.append(Text.assemble(("next to finish: ", C.MUTED), (soonest[0], C.TEXT),
                                      (f"  {clock(t_now + soonest[1].remaining)}", f"bold {C.TEXT}")))
     parts = [pack(phrases, width - 4), Text(""), t]

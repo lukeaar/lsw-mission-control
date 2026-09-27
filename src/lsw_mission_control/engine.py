@@ -18,7 +18,7 @@ from rich.text import Text
 
 import lsw_mission_control
 from lsw_mission_control import theme
-from lsw_mission_control.agents import FinishedStore, label_names, latest_by_label, scan_agents
+from lsw_mission_control.agents import FinishedStore, final_merge_labels, label_names, latest_by_label, scan_agents
 from lsw_mission_control.config import Config
 from lsw_mission_control.net import OWN_LABELS, NetRules, network_critical
 from lsw_mission_control.notes import Notes, NotesLoader
@@ -211,8 +211,9 @@ class Engine:
         plan = self.plans.refresh()
         t = now()
         names = label_names(plan, cfg.release.final_merge)
+        # The final merge is one release's own: the shipped release's never reads as the next one's.
         agents = self.finished.merge(scan_agents(cfg.projects_dir, t, cfg.agents.scan_window_h * 3600), plan, names,
-                                     loaded=self.plans.loaded)
+                                     loaded=self.plans.loaded, release_bound=final_merge_labels(cfg.release.final_merge))
         labels = latest_by_label(agents, t, cfg.agents.silent_stopped_min * 60)
         calibrate(self.cal, plan.items, labels)
         f = Frame(now=t, width=width, cfg=cfg, plan=plan, plan_note=self.plans.note, reload_note=self.reload_note,
