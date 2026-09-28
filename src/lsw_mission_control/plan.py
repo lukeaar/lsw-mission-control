@@ -101,7 +101,7 @@ def _number(value, what: str, whole: bool = False) -> float:
 def parse_stage(st: list, owner: str) -> Stage:
     """[name, spec, minutes]. spec: an agent label, a list of labels, null (no agent: it counts as
     behind once a later stage has started), or {"progress": path, "total": n} for a detached job
-    that appends one JSON line per finished unit to `path`."""
+    that appends one JSON line per finished unit to `path` (it has begun once `path` exists)."""
     if not isinstance(st, list) or len(st) != 3:
         raise ValueError(f"a stage of {owner!r} must be [name, label, minutes], not {st!r}"[:120])
     name, spec, minutes = st[0], st[1], st[2]

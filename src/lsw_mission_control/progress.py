@@ -7,8 +7,9 @@ long finished release stages actually took, minus the time it has already run.
 from __future__ import annotations
 
 import json
+import math
 import os
-from typing import TYPE_CHECKING, Callable, Sequence
+from typing import TYPE_CHECKING, Callable, NamedTuple, Sequence
 
 from lsw_mission_control.agents import review_needs_fix
 from lsw_mission_control.theme import C
@@ -95,19 +96,65 @@ def calibrate(cal: Calibration, items: Sequence[Item], labels: dict) -> None:
 
 
 _progress_cache: dict = {}
+# The earliest start seen for each progress file while it is the same file (device, inode) and has
+# not shrunk: path -> (st_dev, st_ino, size, start). Where the filesystem keeps no birth time a
+# file's creation is its last write, which an appended unit moves forward; this keeps the start.
+_job_starts: dict = {}
+
+# A unit's "t" outside these years is not epoch seconds: a placeholder (0) or milliseconds.
+_T_MIN, _T_MAX = 946_684_800.0, 4_102_444_800.0  # 2000-01-01, 2100-01-01 (UTC)
+
+# Before its units give a pace, a job's time left is its planned minutes; the units' pace then
+# takes over as they come in, weighed against the plan as if the plan were this share of the job's
+# units (at least one). One unit of a long job, or the first of several run at once, is not a pace.
+PACE_PRIOR = 0.1
 
 
-def progress_of(path: str) -> tuple[int, float | None, float | None]:
-    """(units finished, first unit's time, last unit's time) from a detached job's progress file:
-    one JSON line per finished unit, with "t" (epoch seconds) and optionally "status"."""
+class JobFile(NamedTuple):
+    """A detached job's progress file, read: the job has begun once the file exists."""
+
+    units: int  # finished units (lines whose status is none, "ok" or "done")
+    first: float | None  # the first finished unit's time
+    last: float | None  # the last finished unit's time
+    start: float  # when the job began: the file's creation, or its earliest record if that is earlier
+
+
+def _unit_time(v) -> float | None:
+    """A record's "t" as epoch seconds; None when it is not a finite number (true, "x", NaN) or
+    not a time in 2000-2100 (a placeholder 0, a negative number, milliseconds)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    try:
+        t = float(v)
+    except OverflowError:  # an integer too large for a float
+        return None
+    return t if math.isfinite(t) and _T_MIN <= t < _T_MAX else None
+
+
+def created_at(st: os.stat_result) -> float:
+    """When a file was made: its birth time where the filesystem keeps one (macOS), else its last
+    modification (for a file nothing has been written to yet, that is when it was made)."""
+    birth = getattr(st, "st_birthtime", None)
+    return float(birth) if isinstance(birth, (int, float)) and birth > 0 else st.st_mtime
+
+
+def job_file(path: str) -> JobFile | None:
+    """A detached job's progress file (one JSON line per finished unit, with "t" (epoch seconds)
+    and optionally "status"), or None while there is none: a job that has not started."""
     try:
         st = os.stat(path)
     except OSError:
-        return 0, None, None
+        _job_starts.pop(path, None)  # gone: a file made there again is a new job
+        return None
+    key = (st.st_mtime_ns, st.st_size, st.st_ino)
     hit = _progress_cache.get(path)
-    if hit and hit[0] == st.st_mtime:
+    if hit and hit[0] == key:
         return hit[1]
     n, first, last = 0, None, None
+    start = created_at(st)
+    seen = _job_starts.get(path)
+    if seen and seen[:2] == (st.st_dev, st.st_ino) and st.st_size >= seen[2]:
+        start = min(start, seen[3])  # the same file, only grown: its start never moves forward
     try:
         with open(path) as fh:
             for line in fh:
@@ -117,17 +164,35 @@ def progress_of(path: str) -> tuple[int, float | None, float | None]:
                     continue
                 if not isinstance(e, dict):
                     continue  # valid JSON but not a unit's record ("x", 3, []): not a finished unit
+                t = _unit_time(e.get("t"))
+                if t is not None:
+                    start = min(start, t)  # a failed unit's record says the job was running too
                 if e.get("status") not in (None, "ok", "done"):
                     continue
                 n += 1
-                t = e.get("t")
-                if isinstance(t, (int, float)):
+                if t is not None:
                     first = t if first is None else min(first, t)
                     last = t if last is None else max(last, t)
     except OSError:
-        return 0, None, None
-    _progress_cache[path] = (st.st_mtime, (n, first, last))
-    return n, first, last
+        return hit[1] if hit else JobFile(0, None, None, start)  # it exists: begun, units unknown for now
+    _job_starts[path] = (st.st_dev, st.st_ino, st.st_size, start)
+    job = JobFile(n, first, last, start)
+    _progress_cache[path] = (key, job)
+    return job
+
+
+def progress_of(path: str) -> tuple[int, float | None, float | None]:
+    """(units finished, first unit's time, last unit's time) from a detached job's progress file
+    (job_file()); (0, None, None) while there is none."""
+    job = job_file(path)
+    return (0, None, None) if job is None else (job.units, job.first, job.last)
+
+
+def stage_begun(spec, labels: dict) -> bool:
+    """A stage has begun: one of its agents is known, or its detached job's progress file exists."""
+    if isinstance(spec, dict):
+        return job_file(spec["progress"]) is not None
+    return any(x in labels for x in (spec if isinstance(spec, list) else [spec] if spec else []))
 
 
 def eta_from_json(path: str | None, key: str, now: float) -> float | None:
@@ -169,29 +234,54 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
     starts, ends = [], []
     label_sets = [[] if isinstance(sp, dict) else sp if isinstance(sp, list) else ([sp] if sp else [])
                   for _n, sp, _p in stages]
+    begun = [stage_begun(sp, labels) for _n, sp, _p in stages]
     for i, (name, spec, planned) in enumerate(stages):
         minutes = planned * (cal.get(name, 1.0) if cal is not None else 1.0)
-        later_started = any(x in labels for ls in label_sets[i + 1:] for x in ls)
+        later_started = any(begun[i + 1:])
         if isinstance(spec, dict):
             total = int(spec["total"])
-            n, first, last = progress_of(spec["progress"])
-            if n >= total:  # a detached job is done only when every unit is (stages can overlap)
+            job = job_file(spec["progress"])
+            if job is None and later_started:
+                # No progress file, and the work after it has begun: behind it, as a stage with no
+                # agent is (a finished job's folder cleaned up once its results were used).
                 marks.append(("●", C.GREEN))
-                if first and last:
-                    starts.append(first)
-                    ends.append(last)
-                progressed += (last - first) if first and last and last > first else minutes * 60
                 continue
-            if n == 0 or first is None:
+            if job is None:  # no progress file, nothing after it begun: the job has not started
                 queued += minutes * 60
                 marks.append(("○", C.FAINT))
                 continue
-            elapsed = max(1.0, now - first)
-            starts.append(first)
+            n, start = job.units, job.start
+            starts.append(start)
+            prev_start = max(prev_start, start)  # a later stage that ran before the job began runs again
+            if n >= total:  # a detached job is done only when every unit is (stages can overlap)
+                marks.append(("●", C.GREEN))
+                if job.last is not None:
+                    ends.append(job.last)
+                progressed += (job.last - start) if job.last is not None and job.last > start else minutes * 60
+                continue
+            # Running from the moment its file exists, even with no unit finished yet.
+            elapsed = max(0.0, now - start)
             projected = eta_from_json(spec.get("eta_json"), spec.get("eta_key", "projected_finish_utc"), now)
-            # The job's own projection (e.g. a cost model over pages) beats a unit count when units
-            # differ in size, as they do in a largest-first queue.
-            remaining += max(0.0, projected - now) if projected else elapsed * (total - n) / n
+            # Its planned minutes, as an agent's stage has: past them, at least 10 min, or a quarter
+            # of its time so far.
+            planned_left = minutes * 60 - elapsed
+            if planned_left < 10 * 60:
+                planned_left = max(10 * 60, 0.25 * elapsed)
+            if projected:
+                # The job's own projection (e.g. a cost model over pages) beats a unit count when
+                # units differ in size, as they do in a largest-first queue.
+                left = max(0.0, projected - now)
+            elif n:
+                # The units' pace since the job began, weighed against the plan as if the plan had
+                # done PACE_PRIOR of the units: the pace takes over as units come in, but one unit
+                # of a long job (the largest first, several at once) does not multiply its time left.
+                pace = max(1.0, elapsed) * (total - n) / n
+                k = max(1.0, PACE_PRIOR * total)
+                left = (k * planned_left + n * pace) / (k + n)
+            else:
+                left = planned_left  # no unit has finished to give a pace
+                over = max(over, elapsed - max(minutes, planned) * 60)
+            remaining += left
             progressed += elapsed
             current = f"{name} {n}/{total}"
             marks.append(("◉", C.ACCENT))
@@ -267,15 +357,9 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
 
 
 def stages_started(stages: Sequence, labels: dict) -> bool:
-    """Any of the stages has begun: one of its agents is known, or its detached job has finished
-    a unit."""
-    for _n, spec, _m in stages:
-        if isinstance(spec, dict):
-            if progress_of(spec["progress"])[0]:
-                return True
-        elif any(x in labels for x in (spec if isinstance(spec, list) else [spec] if spec else [])):
-            return True
-    return False
+    """Any of the stages has begun: one of its agents is known, or its detached job's progress
+    file exists."""
+    return any(stage_begun(spec, labels) for _n, spec, _m in stages)
 
 
 def wait_for(targets: Sequence[tuple[object, Prog]], *, rerun: bool = False) -> tuple[float | None, object] | None:

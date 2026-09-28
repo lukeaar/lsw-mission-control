@@ -25,9 +25,9 @@ lsw-mission-control/
     notes.py              Notes, read_notes, NotesLoader
     agents.py             transcript_facts, scan_agents, final_merge_labels, label_names, findings_of, stored_ok,
                           store_since, FinishedStore, latest_by_label, review_needs_fix
-    progress.py           Prog, Calibration, calibrate, progress_of, eta_from_json, stages_progress,
-                          stages_started, wait_for, in_wait_order, item_progress, item_started, item_minutes,
-                          short_name
+    progress.py           Prog, Calibration, calibrate, JobFile, created_at, job_file, progress_of, stage_begun,
+                          eta_from_json, stages_progress, stages_started, wait_for, in_wait_order, item_progress,
+                          item_started, item_minutes, short_name
     net.py                NetRules, net_label, NET_CASES, FLAG_CASES, is_dashboard, etime_seconds,
                           network_critical, fit_list, network_flag, flag_verdict, check_net_cases
     plugin.py             Plugin, PluginContext, CliFlag, LiveJob, SideCard, Flags, validate_options, load_plugins
@@ -85,6 +85,8 @@ Calibration(fix_share): factors{build,review,fix}, fix_share, n; get(stage) matc
 calibrate(cal, items, labels)                         # in place: a factor moves only at >= 3 samples,
                                                       # the fix share only at >= 3 reviews
 stages_progress(stages, labels, *, now, cal, default_fix_share, wait_before, after, done_before, paused)
+job_file(path) -> JobFile(units, first, last, start) | None   # None: no progress file, the job has not
+                                                      # begun; start: the file's birth time or earliest line
 wait_for([(ref, Prog)], rerun) -> (seconds | None, ref) | None   # what a row still waits for; None:
                                                       # nothing; a failed target has no time unless rerun
 in_wait_order(n, targets_of, compute, rerun) -> [Prog]   # each row after its targets (release, other, next)

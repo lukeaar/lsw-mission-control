@@ -18,6 +18,18 @@ plugins. Its render is identical on identical inputs; the differences are all on
 
 Fixed before the first release:
 
+- A detached job's stage (`{"progress", "total"}`) runs from the moment its progress file exists,
+  even empty: it read "queued 0%" until its first unit finished, hours into a long job. It reads
+  `<stage> 0/<total>` from the file's creation time (its birth time on macOS), with its planned
+  minutes as its time left until a unit finishes. The units' pace is then timed from the job's
+  start (it was timed from the first unit, so one unit read as taking no time) and weighed against
+  the plan as if the plan had done a tenth of the units, so that the first unit of a long job does not
+  multiply its time left. A stage with no agent before a job that has begun counts as done (a
+  finished job's row read "queued"), and so does a job whose progress file is gone once a later
+  stage has begun (a finished job's folder cleaned up read "queued" again, with its planned
+  minutes). A later stage that ran before the job began runs again, and a unit whose `t` is not a
+  time in 2000-2100 (not a number, a placeholder `0`, milliseconds) has no time.
+
 - A final merge done by hand can be recorded in the plan (`final_merge_by_hand`, docs/plan-schema.md):
   a hotfix cut straight from main read "after all above", and the tag row put the release hours late.
 

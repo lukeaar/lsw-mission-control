@@ -97,13 +97,38 @@ until everything a row runs after is done:
 
 - an agent label (`"docs:draft"`), run-qualified if needed (`"wf_<run>/docs:draft"`);
 - a list of labels (all must finish);
-- `null`: no agent — it counts as done once a later stage has started;
+- `null`: no agent — it counts as done once a later stage has started (an agent of it is known, or
+  its job's progress file exists);
 - `{"progress": "/path/progress.jsonl", "total": 120, "eta_json"?: "/path/eta.json", "eta_key"?: "projected_finish_utc"}`
-  for a detached job that appends one JSON line per finished unit (`{"t": <epoch>, "status"?: "ok"|"done"}`);
-  `eta_json` (used while under 30 min old) is the job's own projected finish, as an ISO time.
+  for a detached job that appends one JSON line per finished unit (`{"t": <epoch>, "status"?: "ok"|"done"}`;
+  a line with any other status is a failed unit, which is not counted, and a `t` that is not a time in
+  2000-2100 in epoch seconds, such as a placeholder `0` or milliseconds, is no time). `eta_json` (used
+  while under 30 min old) is the job's own projected finish, as an ISO time.
 
-A stage that re-ran after a later one started makes the later ones count again. A running stage
-past its estimate has at least 10 min left, or a quarter of its time so far.
+A detached job:
+
+- **has not started** while its progress file does not exist, unless a later stage has begun: then
+  it counts as done, as a `null` stage does (a finished job's folder cleaned up once its results
+  were used);
+- **runs** from the moment the file exists, even empty, and reads `<name> <done>/<total>`
+  (`import 0/120`) until every unit is done. It began when the file was made: its birth time where
+  the filesystem keeps one (macOS), else its last modification, or its earliest line (failed units
+  included) if that is earlier. A unit written later never moves that start forward while the
+  dashboard runs, even where the filesystem keeps no birth time;
+- takes its time left from, in order: `eta_json`'s projection while fresh; before any unit has
+  finished, its planned minutes, as an agent's stage does; after that, the units' pace since the job
+  began (`time so far × units left ÷ units done`) weighed against the plan as if the plan had done
+  a tenth of the units (at least one). The pace takes over as units come in, and one unit of a long job
+  does not multiply its time left.
+
+A job that is run again should delete its old progress file rather than empty it: emptying a file
+keeps its creation time where the filesystem keeps one, so the new run would read as begun with the
+old one. The units' pace assumes units of one size: a job that runs several at once, or the largest
+first, reads high until its units even out, and gets a truer time from `eta_json`.
+
+A stage that re-ran after a later one started makes the later ones count again (a job counts from
+when it began). A running stage past its estimate has at least 10 min left, or a quarter of its time
+so far.
 
 ### The final merge and the tag
 
