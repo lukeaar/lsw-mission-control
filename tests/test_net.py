@@ -23,17 +23,18 @@ def test_net_cases(command, label):
     assert net_label(command) == label
 
 
-@pytest.mark.parametrize("crit, room, want", FLAG_CASES)
-def test_flag_cases(crit, room, want):
-    assert flag_verdict(crit, room) == want
+@pytest.mark.parametrize("crit, conn, room, want", FLAG_CASES)
+def test_flag_cases(crit, conn, room, want):
+    assert flag_verdict(crit, room, conn) == want
 
 
 def test_check_net_prints_the_contract():
     lines = []
     assert check_net_cases(out=lines.append) == 0
     assert lines == [f"{len(NET_CASES)}/{len(NET_CASES)} network cases correct",
-                     f"{len(FLAG_CASES)}/{len(FLAG_CASES)} indicator cases correct"]
-    assert len(NET_CASES) == 28 and len(FLAG_CASES) == 7
+                     f"{len(FLAG_CASES)}/{len(FLAG_CASES)} indicator cases correct",
+                     "30/30 connection cases correct"]
+    assert len(NET_CASES) == 28 and len(FLAG_CASES) == 20
 
 
 def test_check_net_reports_a_mismatch():

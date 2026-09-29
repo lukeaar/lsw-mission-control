@@ -16,6 +16,17 @@ plugins. Its render is identical on identical inputs; the differences are all on
   becomes `-`).
 - `-h` prints help.
 
+The network indicator has a third state, **NOT CONNECTED** (an amber chip, ` ⊘ NOT CONNECTED `,
+with why: `no network`, `captive portal`, `no answer in 2s`, ...): this computer has no working
+internet. It outranks NETWORK-CRITICAL and "safe to switch", and lists the network work in flight
+beside it (that work will fail). A background check in the dashboard's own process decides it,
+never on the render path: a route lookup every second (no route: not connected at once, no
+request), and Apple's captive-portal page every 5 s (2 s right after a change; 2 s timeout), where
+only its `Success` body counts. An answer older than 15 s adds `? connection unknown` rather than
+guess. `--once` waits for the first answer (at most 2 s), `--check-net` prints a third line
+(`N/N connection cases correct`), and `[network] check_internet = false` turns the check off.
+With the internet answering, the flag draws exactly as before.
+
 Fixed before the first release:
 
 - A detached job's stage (`{"progress", "total"}`) runs from the moment its progress file exists,

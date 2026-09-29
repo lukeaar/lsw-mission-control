@@ -18,7 +18,7 @@ lsw-mission-control/
     __main__.py cli.py    the command line
     tools.py              init / validate / doctor
     config.py             Config and its sections, load_config, find_config, claude_slug, usage_dir, ConfigError
-    theme.py              Theme, LSW_DARK, the palette C, use(), theme_from()
+    theme.py              Theme, LSW_DARK, the palette C, use(), theme_from(), contrast(), ink_on()
     util.py               now/set_clock/local_now, iso, human, ago, clock, run, num, write_json, fit, count
     store.py              Store (thread-safe; get/set/update/snapshot, data under lock)
     plan.py               parse_stage, parse_plan, Item/OtherItem/NextItem/NextRelease/Plan, PlanLoader
@@ -28,8 +28,10 @@ lsw-mission-control/
     progress.py           Prog, Calibration, calibrate, JobFile, created_at, job_file, progress_of, stage_begun,
                           eta_from_json, stages_progress, stages_started, wait_for, in_wait_order, item_progress,
                           item_started, item_minutes, short_name
-    net.py                NetRules, net_label, NET_CASES, FLAG_CASES, is_dashboard, etime_seconds,
+    net.py                NetRules, net_label, NET_CASES, FLAG_CASES, NetState, is_dashboard, etime_seconds,
                           network_critical, fit_list, network_flag, flag_verdict, check_net_cases
+    connectivity.py       the internet check's pure parts: Online, Conn, classify, connection, Machine,
+                          CLASSIFY_CASES, STALE_CASES, MACHINE_CASES, run_machine, check_connection_cases
     plugin.py             Plugin, PluginContext, CliFlag, LiveJob, SideCard, Flags, validate_options, load_plugins
     engine.py             Frame, Engine (sources, frames, safe_frame, render), error_where
     app.py                Scroll, apply_keys, keys_loop, run_once, run_live
@@ -37,7 +39,8 @@ lsw-mission-control/
     statusline.py         the Claude Code status line (stdlib, Python 3.9, runnable by path)
     testing.py            freeze, record_console, render_text, render_engine
     sources/              Source base; git.py GitSource; github.py GitHubSource; tokens.py TokenCounter,
-                          model_family; usage_probe.py probe_usage, UsageProbe; testlogs.py test_logs, suite_colour
+                          model_family; usage_probe.py probe_usage, UsageProbe; testlogs.py test_logs, suite_colour;
+                          connectivity.py route_key, ask_internet, Bounded, ConnectivitySource
     render/               widgets.py frame.py notes.py release.py next_release.py other.py side.py agents.py
                           usage.py logo.py guard.py
     templates/            launcher.py statusline_shim.py mission-control.toml status_plan.json status_notes.json
@@ -73,7 +76,8 @@ config is found beside it, and the engine reloads through it (§6).
 util.now() / set_clock(fn) / local_now()            # LSW_MC_NOW or set_clock, else time.time()
 Theme(bg, surface, border, text, muted, faint, accent, accent_soft, green, amber, red, red_soft)
 C.GREEN …                                             # the palette in use; theme.use(theme) at start-up
-Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, gh_timing, tokens, tokens_by_model
+Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, gh_timing, tokens, tokens_by_model,
+                                                      # online (connectivity.Online)
 Plan(release, items, other, next, plugin_data, pre); Item(name, key, build, review, fix, flags, before)
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags)
 PlanLoader(path, plugins).refresh() -> Plan           # mtime-gated; a bad parse keeps the last good plan; .note
@@ -94,7 +98,9 @@ Frame(now, width, cfg, plan, plan_note, reload_note, notes, agents, labels, name
       live_job, live_job_error, plugin_errors, notes_note)
 Engine(cfg, flags, *, readonly, plugins, load_errors, no_plugins)
   .start_sources(probe) .ready() .build_frame(width) .frame(console) .safe_frame(console) .render(console)
-  .errors_for_once() .watched_files() .network_critical(); .ps_text (injectable)
+  .errors_for_once() .watched_files() .network_critical() .connection(); .ps_text (injectable),
+  .internet_check ([network] check_internet)
+Engine.frame / safe_frame -> (body, NetState(crit, conn), width)
 ```
 
 `Engine.frame` runs in this order: refresh the plan, fix the width (`min(console width,
@@ -110,6 +116,7 @@ panel in its own place; the rest of the frame draws.
 | Source | Interval | Store keys | Notes |
 |---|---|---|---|
 | `GitSource` | `[git] poll_s` 20 | `git` | HEAD, unpushed vs `<remote>/<main>`, branches, worktrees − 1, dirty |
+| `ConnectivitySource` | 1 s tick; a request every 5 s (2 s after a change) | `online` | route lookup by UDP connect (no packet), then `captive.apple.com` over http.client on a daemon thread bounded at 2 s; only with `[network] check_internet`; §7 |
 | `GitHubSource` | `[github] poll_s` 120; timing every 600 | `release_gh`, `gh_timing` | the current plan's release via a callable; a failed call keeps the last answer for the same release |
 | `TokenCounter` | 30 s | `tokens`, `tokens_by_model` | all `~/.claude/projects/**/*.jsonl` of 8 days; `<usage dir>/tokens.json` |
 | `UsageProbe` | 20 min, skipped while usage.json < 15 min old | writes `<usage dir>/usage.json` | `claude -p --model haiku … ok` in `<usage dir>/probe-cwd`, killed at the first `rate_limit_event` or 60 s; never under `--once` |
@@ -213,6 +220,16 @@ two writers of one real `finished.json` must never race.
 - `is_dashboard(cmd, markers)`: a launcher's `.claude/status.py`, `-m lsw_mission_control` as argv
   tokens after the interpreter's options, `lsw-mc` as argv[0] or as the script of a Python argv[0],
   or a config marker.
+- The third state, NOT CONNECTED (`connectivity.py`, `sources/connectivity.py`): `Machine.tick(route,
+  ask, clock)` is the whole state machine (no route: offline at once, no request; a request every
+  5 s, every 2 s for three requests after a change of state or route, at once on a new route; a
+  failure with no answer while online is held for one recheck; a captive answer shows at once).
+  `connection(rec, now)` is the view a frame reads: older than 15 s is UNKNOWN. `network_flag(crit,
+  room, conn)`: OFFLINE outranks the rest (chip, why, the work in flight, the first that fits);
+  UNKNOWN adds `? connection unknown` when it fits. The chip's ink is `ink_on(C.AMBER)`, the theme's
+  background or text, whichever contrasts more. `check_net_cases` also runs
+  `check_connection_cases` (`N/N connection cases correct`). No test asks the internet: the
+  scenarios put a fresh `Online` in the store, and the I/O tests use local servers.
 - `network_critical(rules, markers, own_labels, ps_text=None, run=None, self_pid=None)`: skips
   dashboards, processes younger than 8 s, and a dashboard's child **only when its label is one of
   `own_labels`** (`gh` and every plugin's `net_labels`), so a launcher's first-run `pip install` is
@@ -229,7 +246,8 @@ Launch and modes:
   exact tokens; unknown flags are ignored; `--check-net` prints its two lines and exits 1 on a
   mismatch.
 - A first run builds the venv with a notice on stderr.
-- `--once` waits ≤ 25 s (git, GitHub's first round if configured, every plugin ready), prints one
+- `--once` waits ≤ 25 s (git, the internet check's first answer if on, GitHub's first round if
+  configured, every plugin ready), prints one
   frame, and exits 1 with the traceback on any frame or plugin error.
 - Live: the first frame after 1.5 s, built before `Live` starts; data every 5 s;
   `Live(screen=True, auto_refresh=False)`; the logo turns at 8 fps by rewriting only its cells, on
@@ -270,7 +288,8 @@ Panels:
   `plan data as of HH:MM · X ago · probe|terminal`, placeholders while there is no data.
 - The logo beside Model usage from 100 columns when usage is ≥ 5 rows: square, two colours,
   turning, with the `[logo] caption` at its bottom right in faint.
-- The network row; several dashboards at once; the palette (`[theme]`).
+- The network row (not connected, network-critical, safe; `? connection unknown`); several
+  dashboards at once; the palette (`[theme]`).
 
 ---
 
@@ -278,6 +297,7 @@ Panels:
 
 `tests/test_*.py` cover each module; `tests/golden/` holds whole frames at 80/100/120/150 columns
 (plain and styled), the tag row's phases, the usage states, the `after_server` states, the bottom
-row, a broken plan and notes, the frame-error panel and logo frames. All their data is synthetic
+row (its `conn-*` files: every connection state), a broken plan and notes, the frame-error panel
+and logo frames. All their data is synthetic
 (`tests/scenarios.py` and a stub plugin), generated at fixed offsets from a frozen clock.
 `pytest --update-golden` rewrites the goldens; every changed line is reviewed before a commit.

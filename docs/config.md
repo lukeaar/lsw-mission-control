@@ -60,6 +60,7 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[network.subcommands]` | {tool: [str]} | `{}` | merged into the engine's (`hg = ["pull", "push"]`) |
 | `[[network.cases]]` | `{command, label}` | none | real process lines and their labels (`label = ""`: not network); `--check-net` checks them too |
 | `[network] dashboard_markers` | [str] | `[]` | more command-line substrings that mark a dashboard process |
+| `[network] check_internet` | bool | `true` | the indicator's "not connected" state: a request to `http://captive.apple.com/hotspot-detect.html` every 5 s from the dashboard's own process (README, "The network indicator"); `false`: none |
 | `[layout] max_width` | int | `150` | every panel shares one right edge at most this far (at least 60) |
 | `[layout] panels` | [str] | `["notes","release","next","other","side","agents","usage"]` | order and choice; `plugin:<name>` places a plugin's full-width panel (a `[[plugins]]` name); `usage` must stay last while the logo is on |
 | `[logo] enabled` | bool | `true` | the logo beside Model usage (from 100 columns) |

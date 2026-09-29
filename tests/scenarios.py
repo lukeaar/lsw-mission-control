@@ -12,6 +12,7 @@ import textwrap
 from pathlib import Path
 
 from lsw_mission_control.config import load_config
+from lsw_mission_control.connectivity import Online
 from lsw_mission_control.engine import Engine
 from lsw_mission_control.plugin import Flags
 
@@ -119,7 +120,8 @@ class Project:
         cfg = load_config(self.dot / "mission-control.toml")
         e = Engine(cfg, Flags(flags), readonly=readonly)
         e.ps_text = self.ps
-        e.store.update(**self.store)
+        # the internet answered 2 s ago, unless the test says otherwise (None: no answer yet)
+        e.store.update(**{"online": Online(True, "", NOW - 2), **self.store})
         for p in e.plugins:
             p.ctx.state.update(**self.plugin_state)
         return e

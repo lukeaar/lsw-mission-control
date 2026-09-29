@@ -95,7 +95,7 @@ def self_check(cfg, flags: Flags, plugins, load_errors) -> int:
         console = Console(file=io.StringIO(), width=150, height=50, force_terminal=True, color_system="truecolor",
                           legacy_windows=False, style=f"{cfg.theme.text} on {cfg.theme.bg}")
         scroll = Scroll(cfg.layout.max_width, engine.logo, scroll_envs(cfg.compat.legacy_scroll_env))
-        scroll.body, scroll.crit, _w = engine.safe_frame(console)
+        scroll.body, scroll.net, _w = engine.safe_frame(console)
         console.set_alt_screen(True)
         console.print(scroll)
         scroll.spin(console)

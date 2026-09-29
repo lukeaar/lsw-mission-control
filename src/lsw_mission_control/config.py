@@ -116,6 +116,7 @@ class NetworkCfg:
     subcommands: dict = field(default_factory=dict)
     cases: tuple[tuple[str, str | None], ...] = ()
     dashboard_markers: tuple[str, ...] = ()
+    check_internet: bool = True  # the indicator's "not connected" state (connectivity.py)
 
 
 @dataclass(frozen=True)
@@ -414,7 +415,7 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
     _at_least(usage.probe_every_min, "[usage].probe_every_min", 5, " (each probe starts a Claude CLI)")
     _at_least(usage.probe_fresh_min, "[usage].probe_fresh_min", 0)
 
-    n = _table(raw, "network", {"tools", "subcommands", "cases", "dashboard_markers"})
+    n = _table(raw, "network", {"tools", "subcommands", "cases", "dashboard_markers", "check_internet"})
     subs = _get(n, "[network]", "subcommands", dict, {})
     for tool, words_ in subs.items():
         if not (isinstance(words_, list) and all(isinstance(x, str) for x in words_)):
@@ -425,7 +426,7 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
             raise ConfigError(f"[[network.cases]] #{i + 1} must be {{command = '...', label = '...'}} ('' = not network)")
         cases.append((case["command"], case["label"] or None))
     network = NetworkCfg(_strs(n, "[network]", "tools", ()), {k: tuple(v) for k, v in subs.items()}, tuple(cases),
-                         _strs(n, "[network]", "dashboard_markers", ()))
+                         _strs(n, "[network]", "dashboard_markers", ()), _get(n, "[network]", "check_internet", bool, True))
 
     lay = _table(raw, "layout", {"max_width", "panels"})
     panels = _strs(lay, "[layout]", "panels", DEFAULT_PANELS)

@@ -59,6 +59,25 @@ class _Palette:
 C = _Palette(LSW_DARK)
 
 
+def _luminance(colour: str) -> float:
+    """WCAG relative luminance of '#rrggbb'."""
+    c = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio of two '#rrggbb' colours (1 to 21)."""
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def ink_on(colour: str) -> str:
+    """The theme's background or text colour, whichever reads better on `colour`: a chip's letters
+    stay legible in a dark theme and in a light one."""
+    return C.BG if contrast(C.BG, colour) >= contrast(C.TEXT, colour) else C.TEXT
+
+
 def use(theme: Theme) -> None:
     """Switch the palette (once, at start-up: a config change restarts the process)."""
     C.use(theme)

@@ -48,7 +48,7 @@ def test_scroll_window_pins_the_bottom_row(tmp_path):
     e = p.engine()
     s = Scroll(150, e.logo)
     console = Console(file=io.StringIO(), width=150, height=40)
-    s.body, s.crit, _ = e.safe_frame(console)
+    s.body, s.net, _ = e.safe_frame(console)
     lines = render_scroll(s)
     assert len(lines) == 40 and lines[-1].startswith("▼") and "safe to switch networks" in lines[-1]
     s.offset = 7
@@ -68,7 +68,7 @@ def test_logo_spins_on_the_alt_screen(tmp_path):
     e = p.engine()
     console = Console(file=io.StringIO(), width=150, height=80, force_terminal=True, color_system="truecolor")
     s = Scroll(150, e.logo)
-    s.body, s.crit, _ = e.safe_frame(console)
+    s.body, s.net, _ = e.safe_frame(console)
     console.set_alt_screen(True)
     console.print(s)
     before = len(console.file.getvalue())

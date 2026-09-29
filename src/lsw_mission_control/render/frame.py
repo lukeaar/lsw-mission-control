@@ -5,6 +5,7 @@ from __future__ import annotations
 from rich.table import Table
 from rich.text import Text
 
+from lsw_mission_control.connectivity import Conn
 from lsw_mission_control.net import network_flag
 from lsw_mission_control.render.widgets import legend_line
 from lsw_mission_control.theme import C
@@ -25,9 +26,9 @@ def title_line(title: str, subtitle: str, reload_note: str = "", plan_note: str 
     return t
 
 
-def bottom_line(width: int, crit: list[str] | None, pos: str = "") -> Table:
+def bottom_line(width: int, crit: list[str] | None, pos: str = "", conn: Conn | None = None) -> Table:
     """The last row: the scroll position and the Key on the left (the Key never truncates); at the
-    very bottom right, whether switching networks is safe now."""
+    very bottom right, whether this computer is on the internet and switching networks is safe now."""
     left = Text()
     if pos:
         left.append(pos + "  ", style=C.MUTED)
@@ -35,5 +36,5 @@ def bottom_line(width: int, crit: list[str] | None, pos: str = "") -> Table:
     g = Table.grid(padding=(0, 0))
     g.add_column(no_wrap=True, width=left.cell_len)
     g.add_column(no_wrap=True, justify="right", width=max(1, width - left.cell_len), overflow="crop")
-    g.add_row(left, network_flag(crit, width - left.cell_len - 2))
+    g.add_row(left, network_flag(crit, width - left.cell_len - 2, conn))
     return g

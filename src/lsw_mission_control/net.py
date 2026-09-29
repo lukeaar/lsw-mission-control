@@ -9,6 +9,11 @@ pip install) is listed like anyone else's.
 This must ALWAYS be right. Add every new kind of network work here first (or, for a tool only
 one project uses, to that project's [network] config), add a real ps line to NET_CASES (or
 [[network.cases]]), and run `--check-net`.
+
+The flag has three states: NOT CONNECTED (the background internet check, connectivity.py, found
+no working internet; it outranks the others, and lists any network work in flight beside it, as
+that work will fail), NETWORK-CRITICAL (network work in flight) and safe to switch. When the
+internet check's last answer is too old, the flag says "connection unknown" rather than guess.
 """
 
 from __future__ import annotations
@@ -20,7 +25,17 @@ from typing import Iterable, Mapping
 
 from rich.text import Text
 
-from lsw_mission_control.theme import C
+from lsw_mission_control.connectivity import (
+    CAPTIVE,
+    NO_ANSWER,
+    NO_NETWORK,
+    OFFLINE,
+    ONLINE,
+    UNKNOWN,
+    Conn,
+    check_connection_cases,
+)
+from lsw_mission_control.theme import C, ink_on
 from lsw_mission_control.util import human
 from lsw_mission_control.util import run as _run
 
@@ -147,19 +162,49 @@ NET_CASES = [
 ]
 
 
-# The indicator as drawn: (what ps found — None when the check itself failed —, the room, and
-# what the flag must show: "safe", "unknown", or how many names are at risk in total).
+# The indicator as drawn: (what ps found — None when the check itself failed —, what the internet
+# check shows — None when it is off —, the room, and what the flag must show: "safe", "unknown",
+# how many names are at risk in total, "offline" (and ", N at risk"), and ", connection unknown"
+# after the others when the internet check's answer is too old).
 FLAG_CASES = [
-    ([], 60, "safe"),
-    (None, 60, "unknown"),
-    (["git push (1m)"], 60, 1),
-    (["ssh → hostname (12m)", "git push (1m)", "npm install (3m)", "rsync (remote) (40s)", "docker pull (2m)"], 40, 5),
-    (["ssh → a-very-long-host-name.example.internal.network (1h02)", "git push (1m)", "curl (9s)"], 45, 3),
-    (["pip install (2m)"] * 30, 30, 30),
-    (["git push (1m)"], 0, 1),
+    ([], None, 60, "safe"),
+    (None, None, 60, "unknown"),
+    (["git push (1m)"], None, 60, 1),
+    (["ssh → hostname (12m)", "git push (1m)", "npm install (3m)", "rsync (remote) (40s)", "docker pull (2m)"], None, 40, 5),
+    (["ssh → a-very-long-host-name.example.internal.network (1h02)", "git push (1m)", "curl (9s)"], None, 45, 3),
+    (["pip install (2m)"] * 30, None, 30, 30),
+    (["git push (1m)"], None, 0, 1),
+    # the internet answered: exactly the two states above
+    ([], Conn(ONLINE), 60, "safe"),
+    (None, Conn(ONLINE), 60, "unknown"),
+    (["git push (1m)"], Conn(ONLINE), 60, 1),
+    # no working internet: it outranks the others, and names the work in flight (it will fail)
+    ([], Conn(OFFLINE, CAPTIVE), 60, "offline"),
+    ([], Conn(OFFLINE, NO_NETWORK), 0, "offline"),
+    (None, Conn(OFFLINE, NO_ANSWER), 60, "offline"),
+    (["git push (1m)"], Conn(OFFLINE, NO_NETWORK), 60, "offline, 1 at risk"),
+    (["ssh → hostname (12m)", "git push (1m)", "npm install (3m)", "rsync (remote) (40s)", "docker pull (2m)"],
+     Conn(OFFLINE, CAPTIVE), 50, "offline, 5 at risk"),
+    (["pip install (2m)"] * 30, Conn(OFFLINE, NO_ANSWER), 30, "offline, 30 at risk"),
+    (["git push (1m)"], Conn(OFFLINE, CAPTIVE), 0, "offline"),  # the chip always shows, the rest when it fits
+    # the internet check's answer is too old: never a guess
+    ([], Conn(UNKNOWN, "last checked 40s ago"), 60, "safe, connection unknown"),
+    (None, Conn(UNKNOWN, "not checked yet"), 60, "unknown, connection unknown"),
+    (["git push (1m)"], Conn(UNKNOWN, "last checked 40s ago"), 60, "1, connection unknown"),
 ]
 
+@dataclass(frozen=True)
+class NetState:
+    """What the indicator draws: `crit` (what a drop would kill now; None when ps failed) and
+    `conn` (the internet check's view; None when the check is off)."""
+
+    crit: list[str] | None = field(default_factory=list)
+    conn: Conn | None = None
+
+
 NET_CHIP = " NETWORK-CRITICAL "
+OFFLINE_CHIP = " ⊘ NOT CONNECTED "
+UNKNOWN_NOTE = "? connection unknown"
 # Every dashboard's own polling makes these; a plugin adds its own (its ssh hosts).
 OWN_LABELS = frozenset({"gh"})
 LEGACY_MARKER = ".claude/status.py"
@@ -253,51 +298,105 @@ def fit_list(names: list[str], room: int) -> tuple[int, str]:
     return len(shown), ", ".join(shown + [f"+{more} more"])
 
 
-def network_flag(crit: list[str] | None, room: int) -> Text:
-    """Whether switching networks is safe now. When it is not, the chip always shows, and the
-    list of what is at risk shortens ('+N more') to fit the room the Key leaves. `None` means
-    the check itself failed: then it never says safe."""
-    if crit is None:
-        return Text("● network check failed", style=C.AMBER)
-    if not crit:
-        return Text("● safe to switch networks", style=C.GREEN)
-    # The chip is a span, not the Text's base style: a base style would paint the list (and the
-    # justify padding) red on red too.
-    flag = Text()
-    flag.append(NET_CHIP, style=f"bold {C.BG} on {C.RED}")
+def _at_risk(crit: list[str], room: int) -> str:
+    """The most of `crit` that fits `room`: ages go before names do."""
     bare = [re.sub(r" \([^()]*\)$", "", c) for c in crit]  # without their ages
-    # What is at risk matters more than for how long: ages go before names do.
-    room = max(0, room - len(NET_CHIP) - 2)
     with_ages, without = fit_list(crit, room), fit_list(bare, room)
-    listed = with_ages[1] if with_ages[0] >= without[0] else without[1]
-    if len(listed) <= room:
-        flag.append("  " + listed, style=f"bold {C.RED_SOFT}")
+    return with_ages[1] if with_ages[0] >= without[0] else without[1]
+
+
+def _offline_flag(crit: list[str] | None, room: int, why: str) -> Text:
+    """NOT CONNECTED, why, and the network work in flight (it will fail): the first of these that
+    fits the room. What will fail matters more than why; the chip always shows."""
+    flag = Text()
+    flag.append(OFFLINE_CHIP, style=f"bold {ink_on(C.AMBER)} on {C.AMBER}")
+    room = max(0, room - len(OFFLINE_CHIP) - 2)
+    reason, sep, red = (why, C.AMBER), (" · ", C.MUTED), f"bold {C.RED_SOFT}"
+    if crit is None:  # ps failed: nothing can be listed, and the flag must not read as "nothing in flight"
+        options = [[reason, sep, ("network check failed", C.AMBER)], [reason]]
+    elif crit:
+        bare = [re.sub(r" \([^()]*\)$", "", c) for c in crit]
+        options = [[reason, sep, (", ".join(crit), red)], [reason, sep, (", ".join(bare), red)],
+                   [(_at_risk(crit, room), red)]]
+    else:
+        options = [[reason]]
+    for parts in options:
+        if sum(len(text) for text, _style in parts) <= room:
+            flag.append("  ")
+            for text, style in parts:
+                flag.append(text, style=style)
+            break
     return flag
 
 
-def flag_verdict(crit: list[str] | None, room: int) -> str | int:
-    plain = network_flag(crit, room).plain
-    if "safe to switch" in plain:
-        return "safe"
-    if NET_CHIP not in plain:
-        return "unknown"
-    listed = plain.split(NET_CHIP, 1)[1].strip()
+def network_flag(crit: list[str] | None, room: int, conn: Conn | None = None) -> Text:
+    """Whether switching networks is safe now. When it is not, the chip always shows, and the
+    list of what is at risk shortens ('+N more') to fit the room the Key leaves. `None` means
+    the check itself failed: then it never says safe. `conn` is the internet check's view (None:
+    the check is off): NOT CONNECTED outranks the rest; an answer too old says so."""
+    if conn is not None and conn.state == OFFLINE:
+        return _offline_flag(crit, room, conn.why)
+    if crit is None:
+        flag = Text("● network check failed", style=C.AMBER)
+    elif not crit:
+        flag = Text("● safe to switch networks", style=C.GREEN)
+    else:
+        # The chip is a span, not the Text's base style: a base style would paint the list (and the
+        # justify padding) red on red too.
+        flag = Text()
+        flag.append(NET_CHIP, style=f"bold {C.BG} on {C.RED}")
+        # What is at risk matters more than for how long: ages go before names do.
+        listed = _at_risk(crit, max(0, room - len(NET_CHIP) - 2))
+        if len(listed) <= max(0, room - len(NET_CHIP) - 2):
+            flag.append("  " + listed, style=f"bold {C.RED_SOFT}")
+    if conn is not None and conn.state == UNKNOWN and flag.cell_len + 2 + len(UNKNOWN_NOTE) <= room:
+        flag.append("  " + UNKNOWN_NOTE, style=C.AMBER)
+    return flag
+
+
+def _count(listed: str, crit: list[str] | None) -> int:
     names = [x for x in listed.split(", ") if x] if listed else []
     more = re.fullmatch(r"\+(\d+) more", names[-1]) if names else None
     return len(names) - 1 + int(more.group(1)) if more else (len(names) or len(crit or []))
 
 
+def flag_verdict(crit: list[str] | None, room: int, conn: Conn | None = None) -> str | int:
+    """What the drawn flag says, read back from its text (FLAG_CASES' words)."""
+    plain = network_flag(crit, room, conn).plain
+    if plain.startswith(OFFLINE_CHIP):
+        rest = plain[len(OFFLINE_CHIP):].strip()
+        why = conn.why if conn is not None else ""
+        if why and rest.startswith(why):
+            rest = rest[len(why):].removeprefix(" · ")
+            if rest == "network check failed":
+                rest = ""
+        n = _count(rest, crit) if rest else 0
+        return f"offline, {n} at risk" if n else "offline"
+    unknown = plain.endswith(UNKNOWN_NOTE)
+    if unknown:
+        plain = plain.removesuffix("  " + UNKNOWN_NOTE)
+    if "safe to switch" in plain:
+        verdict: str | int = "safe"
+    elif NET_CHIP not in plain:
+        verdict = "unknown"
+    else:
+        verdict = _count(plain.split(NET_CHIP, 1)[1].strip(), crit)
+    return f"{verdict}, connection unknown" if unknown else verdict
+
+
 def check_net_cases(rules: NetRules = DEFAULT, extra_cases=(), out=print) -> int:
-    """Prints 'N/N network cases correct' (a contract: the reload gate looks for that phrase) and
-    'N/N indicator cases correct'; 1 on any mismatch."""
+    """Prints 'N/N network cases correct' (a contract: the reload gate looks for that phrase),
+    'N/N indicator cases correct' and 'N/N connection cases correct' (the internet check's verdicts,
+    staleness rule and state machine); 1 on any mismatch."""
     cases = list(NET_CASES) + list(extra_cases)
     bad = [(c, want, net_label(c, rules)) for c, want in cases if net_label(c, rules) != want]
     for c, want, got in bad:
         out(f"MISMATCH want={want!r} got={got!r}: {c}")
     out(f"{len(cases) - len(bad)}/{len(cases)} network cases correct")
-    flag_bad = [(c, room, want, flag_verdict(c, room)) for c, room, want in FLAG_CASES
-                if flag_verdict(c, room) != want]
-    for c, room, want, got in flag_bad:
-        out(f"FLAG MISMATCH want={want!r} got={got!r}: room={room} {c}")
+    flag_bad = [(c, conn, room, want, flag_verdict(c, room, conn)) for c, conn, room, want in FLAG_CASES
+                if flag_verdict(c, room, conn) != want]
+    for c, conn, room, want, got in flag_bad:
+        out(f"FLAG MISMATCH want={want!r} got={got!r}: room={room} {conn} {c}")
     out(f"{len(FLAG_CASES) - len(flag_bad)}/{len(FLAG_CASES)} indicator cases correct")
-    return 1 if bad or flag_bad else 0
+    conn_code = check_connection_cases(out)
+    return 1 if bad or flag_bad or conn_code else 0

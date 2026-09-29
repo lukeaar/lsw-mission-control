@@ -20,7 +20,8 @@ import lsw_mission_control
 from lsw_mission_control import theme
 from lsw_mission_control.agents import FinishedStore, final_merge_labels, label_names, latest_by_label, scan_agents
 from lsw_mission_control.config import Config
-from lsw_mission_control.net import OWN_LABELS, NetRules, network_critical
+from lsw_mission_control.connectivity import UNKNOWN, Conn, connection
+from lsw_mission_control.net import OWN_LABELS, NetRules, NetState, network_critical
 from lsw_mission_control.notes import Notes, NotesLoader
 from lsw_mission_control.plan import Plan, PlanLoader
 from lsw_mission_control.plugin import Flags, LiveJob, Plugin, SideCard, load_plugins
@@ -36,6 +37,7 @@ from lsw_mission_control.render.release import release_panel
 from lsw_mission_control.render.side import error_card, repo_grid, side_columns, side_panels
 from lsw_mission_control.render.usage import usage_row
 from lsw_mission_control.render.widgets import panel
+from lsw_mission_control.sources.connectivity import ConnectivitySource
 from lsw_mission_control.sources.git import GitSource
 from lsw_mission_control.sources.github import GitHubSource
 from lsw_mission_control.sources.testlogs import test_logs
@@ -133,6 +135,8 @@ class Engine:
                 pass
         self.own_labels = frozenset(own)
         self.ps_text: str | None = None  # tests and parity inject a process table
+        # The indicator's "not connected" state: a background check writes the store's `online`.
+        self.internet_check = cfg.network.check_internet
         self.reload_note = ""
         self.last_error = ""  # the traceback of the last frame that failed ("" when it worked)
         self.plugin_tracebacks: list[str] = []  # the last frame's caught plugin errors
@@ -145,6 +149,8 @@ class Engine:
     def start_sources(self, probe: bool = True) -> None:
         cfg = self.cfg
         self.sources = [GitSource(cfg.root, cfg.git.main_branch, cfg.git.remote, self.store, cfg.git.poll_s)]
+        if self.internet_check:
+            self.sources.append(ConnectivitySource(self.store))
         if cfg.github.repo:
             self.sources.append(GitHubSource(cfg.github, cfg.release, cfg.git.main_branch, self.store,
                                              lambda: self.plans.plan.release))
@@ -161,9 +167,11 @@ class Engine:
                 self.load_errors.append((p.name, f"{type(e).__name__}: {e}"))
 
     def ready(self) -> bool:
-        """--once waits for this: git, GitHub's first round (if configured; answered or not) and
-        every plugin."""
+        """--once waits for this: git, the internet check's first answer (if on; it takes at most
+        its 2 s timeout), GitHub's first round (if configured; answered or not) and every plugin."""
         if not self.store.get("git"):
+            return False
+        if self.internet_check and self.store.get("online") is None:
             return False
         if self.cfg.github.repo and not self.store.get("gh_polled"):
             return False
@@ -298,8 +306,8 @@ class Engine:
         except Exception as e:  # noqa: BLE001 — this panel shows the error; the rest of the frame draws
             return self._stand_in(name, e)
 
-    def frame(self, console: Console) -> tuple[RenderableType, list[str] | None, int]:
-        """(the scrollable body, what is network-critical now, the dashboard's width)."""
+    def frame(self, console: Console) -> tuple[RenderableType, NetState, int]:
+        """(the scrollable body, the network indicator's state now, the dashboard's width)."""
         cfg = self.cfg
         self.plugin_tracebacks = []
         self.panel_errors = {}
@@ -338,13 +346,18 @@ class Engine:
                         body = panel(Text(err, style=f"bold {C.RED_SOFT}"), p.name)
             if body is not None:
                 parts.append(Guarded(body, lambda e, name=name: self._stand_in(name, e, f"drawing the {name} panel")))
-        return Group(*parts), self.network_critical(), width
+        return Group(*parts), NetState(self.network_critical(), self.connection()), width
+
+    def connection(self) -> Conn | None:
+        """The internet check's view now (None when the check is off): its last answer, or
+        "unknown" when that is too old."""
+        return connection(self.store.get("online"), now()) if self.internet_check else None
 
     def network_critical(self) -> list[str] | None:
         return network_critical(self.net_rules, self.cfg.network.dashboard_markers, self.own_labels, ps_text=self.ps_text,
                                 self_pid=os.getpid() if self.ps_text is None else None)
 
-    def safe_frame(self, console: Console) -> tuple[RenderableType, list[str] | None, int]:
+    def safe_frame(self, console: Console) -> tuple[RenderableType, NetState, int]:
         """frame(), except that an error in it shows as a panel instead of killing the owner's view
         (the next refresh tries again). The network row is still checked, and never says safe
         when that check fails too."""
@@ -362,15 +375,19 @@ class Engine:
                 crit = self.network_critical()
             except Exception:  # noqa: BLE001
                 crit = None
+            try:
+                conn = self.connection()
+            except Exception:  # noqa: BLE001 — never a guess: "unknown"
+                conn = Conn(UNKNOWN, "not read") if self.internet_check else None
             width = min(console.size.width, self.cfg.layout.max_width)
             return (Group(title_line(self.cfg.title, self.cfg.subtitle, self.reload_note, self.plans.note, self.notes.note),
                           Text(""),
-                          panel(msg, "Mission control error")), crit, width)
+                          panel(msg, "Mission control error")), NetState(crit, conn), width)
 
     def render(self, console: Console) -> RenderableType:
         """The whole dashboard as one renderable (--once): the body, then the Key + network row."""
-        body, crit, width = self.safe_frame(console)
-        return Constrain(Group(body, bottom_line(width, crit)), width)
+        body, net, width = self.safe_frame(console)
+        return Constrain(Group(body, bottom_line(width, net.crit, conn=net.conn)), width)
 
     def errors_for_once(self) -> str:
         """What --once reports on stderr (and exits 1 for): a failed frame, a failed panel (built or

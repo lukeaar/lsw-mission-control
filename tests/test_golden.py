@@ -8,6 +8,7 @@ import re
 import pytest
 
 from lsw_mission_control import testing
+from lsw_mission_control.connectivity import CAPTIVE, NO_ANSWER, NO_NETWORK, OFFLINE, ONLINE, UNKNOWN, Conn
 from lsw_mission_control.render.frame import bottom_line
 from lsw_mission_control.render.release import release_panel
 from lsw_mission_control.render.usage import usage_panel
@@ -228,6 +229,28 @@ def test_bottom_line(update_golden, state, width):
     plain, styled = testing.render_text(bottom_line(width, CRIT[state], "▲3 ▼12"), width)
     check(f"bottom/{state}-{width}.txt", plain, update_golden)
     check(f"bottom/{state}-{width}.ansi", styled, update_golden)
+
+
+# The three states with the internet check on: (what ps found, what the check shows).
+CONN = {
+    "online-safe": ([], Conn(ONLINE)),
+    "online-one": (["git push (1m)"], Conn(ONLINE)),
+    "offline-safe": ([], Conn(OFFLINE, CAPTIVE)),
+    "offline-one": (["git push (1m)"], Conn(OFFLINE, NO_NETWORK)),
+    "offline-many": (CRIT["many"], Conn(OFFLINE, NO_ANSWER)),
+    "offline-failed": (None, Conn(OFFLINE, NO_ANSWER)),
+    "unknown-safe": ([], Conn(UNKNOWN, "last checked 40s ago")),
+    "unknown-one": (["git push (1m)"], Conn(UNKNOWN, "not checked yet")),
+}
+
+
+@pytest.mark.parametrize("state", sorted(CONN))
+@pytest.mark.parametrize("width", (80, 150))
+def test_bottom_line_connection(update_golden, state, width):
+    crit, conn = CONN[state]
+    plain, styled = testing.render_text(bottom_line(width, crit, "▲3 ▼12", conn), width)
+    check(f"bottom/conn-{state}-{width}.txt", plain, update_golden)
+    check(f"bottom/conn-{state}-{width}.ansi", styled, update_golden)
 
 
 def test_plan_errors_keep_the_last_good_plan(tmp_path, update_golden):

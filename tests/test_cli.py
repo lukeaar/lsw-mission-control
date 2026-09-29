@@ -27,7 +27,7 @@ def test_check_net_contract(tmp_path):
     p = Project(tmp_path)
     r = lswmc("--project", str(p.root), "--check-net")
     assert r.returncode == 0, r.stderr
-    assert r.stdout == "28/28 network cases correct\n7/7 indicator cases correct\n"
+    assert r.stdout == "28/28 network cases correct\n20/20 indicator cases correct\n30/30 connection cases correct\n"
 
 
 def test_check_net_with_project_cases(tmp_path):
@@ -90,6 +90,7 @@ def test_config_errors_name_the_file_once(tmp_path):
 
 def test_flags_are_exact_and_strays_are_ignored_with_a_launcher(tmp_path):
     p = Project(tmp_path)
+    p.write_config("[network]\ncheck_internet = false\n")  # no request to the internet from a test
     launcher = p.dot / "status.py"
     # --check is not --check-net (no abbreviations); a stray word is ignored, as it always was
     r = lswmc("--launcher", str(launcher), "once", "--check", "--check-net")

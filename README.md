@@ -2,8 +2,8 @@
 
 A live terminal dashboard of everything Claude Code is doing on a project: the release being
 built and every item it waits for, other work in progress, the agents at work right now, the
-repository and its CI, the plan limits and tokens used, and whether it is safe to switch
-networks this second. It reads what is already there — Claude Code's workflow journals and
+repository and its CI, the plan limits and tokens used, and whether this computer is on the
+internet and it is safe to switch networks this second. It reads what is already there — Claude Code's workflow journals and
 transcripts under `~/.claude/projects`, git, GitHub through `gh`, the session scratchpads' test
 logs — plus two small files a project keeps by hand: a **plan** and **notes**.
 
@@ -111,11 +111,33 @@ freezes the clock.
   the session scratchpads, each named after the agent whose command writes its log.
 - **Model usage**: the 5-hour and weekly plan limits with their resets, tokens used (last 5 h,
   today, 7 days) and by model; beside it the logo, turning slowly — a frozen dashboard stops.
-- **The last row**: the Key, and at the very right whether switching networks is safe now.
+- **The last row**: the Key, and at the very right whether this computer is on the internet and
+  switching networks is safe now.
 
 ## The network indicator
 
-The bottom-right flag lists every running process a network drop would kill: ssh/scp/sftp,
+The bottom-right flag has three states:
+
+| Flag | Means |
+|---|---|
+| `● safe to switch networks` (green) | on the internet, and nothing in flight a drop would kill |
+| ` NETWORK-CRITICAL ` (a red chip) and what is at risk | network work in flight: do not switch now |
+| ` ⊘ NOT CONNECTED ` (an amber chip), why, and what is in flight | no working internet; it outranks the other two, and lists the network work in flight (it will fail) |
+
+**Not connected** comes from a background check in the dashboard's own process, never on the
+render path. Every second it looks up the route to the internet in the kernel (a UDP connect: no
+packet is sent); no route (Wi-Fi off, cable out) reads `no network` at once, with no request.
+With a route it asks Apple's captive-portal check (`http://captive.apple.com/hotspot-detect.html`,
+the page macOS itself asks, with a 2 s timeout) every 5 s, every 2 s for three requests after the
+state or the route changes, and at once when the route changes. Only the page's `Success` body
+counts: a login page or a redirect reads `captive portal`, and silence `no answer in 2s`. A
+request that fails with no answer while the last answer was "online" is asked again 2 s later
+before the flag changes, so a single lost packet does not flash it. An answer older than 15 s is
+never shown as either: the flag adds `? connection unknown`. The check starts no process, so it
+is never listed as network work. `[network] check_internet = false` turns it off (the flag then
+shows only whether switching is safe).
+
+The flag lists every running process a network drop would kill: ssh/scp/sftp,
 remote rsync, git push/fetch/pull/clone, gh, curl/wget, pip and npm installs, pip-audit, docker
 push/pull/build and compose pull/build, brew, playwright installs. Processes younger than 8 s
 are ignored, and so is every dashboard's own polling (its `gh` calls and the ssh hosts its plugins
@@ -137,8 +159,9 @@ command = "hg pull -u"
 label = "hg pull"
 ```
 
-`--check-net` prints `N/N network cases correct` and `N/N indicator cases correct` (the reload
-gate looks for the first phrase: it must never change).
+`--check-net` prints `N/N network cases correct`, `N/N indicator cases correct` and `N/N
+connection cases correct` (the internet check's verdicts, its staleness rule and scripted runs
+of its state machine); the reload gate looks for the first phrase: it must never change.
 
 ## The status line and the plan limits
 

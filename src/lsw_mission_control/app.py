@@ -14,6 +14,7 @@ from rich.live import Live
 from rich.text import Text
 
 from lsw_mission_control.engine import Engine
+from lsw_mission_control.net import NetState
 from lsw_mission_control.render.frame import bottom_line
 from lsw_mission_control.render.logo import LOGO_FPS, LogoAnimator
 from lsw_mission_control.render.widgets import panel
@@ -43,7 +44,7 @@ class Scroll:
         self.error = ""  # the traceback of the last draw that failed as a whole ("" when it worked)
         self.logo = logo
         self.logo_at = None
-        self.crit: list[str] | None = []
+        self.net = NetState()
         self.page = 20
         self.max_width = max_width
         self.offset = 0
@@ -92,7 +93,8 @@ class Scroll:
         for line in window:
             yield from line
             yield Segment.line()
-        yield from console.render_lines(bottom_line(width, self.crit, pos), opts.update(height=1), pad=True)[0]
+        yield from console.render_lines(bottom_line(width, self.net.crit, pos, self.net.conn), opts.update(height=1),
+                                        pad=True)[0]
 
     def spin(self, console) -> None:
         """Advance the logo one frame and redraw only its cells: a few hundred bytes, not a
@@ -178,7 +180,7 @@ def run_live(engine: Engine, console: Console, reloader=None) -> None:
     time.sleep(FIRST_FRAME_AFTER_S)
     scroll = Scroll(engine.cfg.layout.max_width, engine.logo, scroll_envs(engine.cfg.compat.legacy_scroll_env))
     wake, quit_flag = threading.Event(), threading.Event()
-    scroll.body, scroll.crit, _w = engine.safe_frame(console)  # the first frame is ready before Live starts
+    scroll.body, scroll.net, _w = engine.safe_frame(console)  # the first frame is ready before Live starts
     # Keys drive the scroll window; the terminal must not echo them (the wheel's arrow
     # keys used to print as escape codes) or buffer them for the shell after we exit.
     saved = None
@@ -221,7 +223,7 @@ def run_live(engine: Engine, console: Console, reloader=None) -> None:
                             live.stop()
                             restore()
                             reloader.exec(scroll.offset)
-                    scroll.body, scroll.crit, _w = engine.safe_frame(console)
+                    scroll.body, scroll.net, _w = engine.safe_frame(console)
                     next_data = time.time() + DATA_EVERY_S
                 live.refresh()
     except KeyboardInterrupt:
