@@ -96,7 +96,9 @@ def scan_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600) -> 
         try:
             if run_dir.stat().st_mtime < cutoff or not journal.exists():
                 continue
-            lines = journal.read_text(errors="replace").splitlines()
+            # At newlines only: a JSON string may hold U+2028, U+2029 or U+0085 unescaped, and
+            # str.splitlines() splits there, which lost an agent's result (it read as failed).
+            lines = journal.read_text(errors="replace").split("\n")
         except OSError:
             continue
         by_key: dict = {}
@@ -105,6 +107,8 @@ def scan_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600) -> 
                 e = json.loads(line)
             except Exception:
                 continue
+            if not isinstance(e, dict):
+                continue  # valid JSON but not an event ("x", 3, []): nothing to read
             kind = e.get("type")
             if kind == "started":
                 by_key[e.get("key")] = {"id": str(e.get("agentId")), "label": str(e.get("label") or "?"),

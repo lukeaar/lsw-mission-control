@@ -89,6 +89,34 @@ def test_transcript_facts_of_a_missing_or_odd_file(tmp_path):
     assert transcript_facts(f) == (None, None, "", frozenset())
 
 
+def journal_dir(p: Project, run: str = "wf_lines"):
+    d = p.projects / "sess-1" / "subagents" / "workflows" / run
+    d.mkdir(parents=True)
+    return d
+
+
+@pytest.mark.parametrize("sep", [" ", " ", "\x85"])
+def test_a_result_holding_a_line_separator_is_one_line(tmp_path, sep):
+    """a JSON string may hold U+2028, U+2029 and U+0085 unescaped, and str.splitlines() splits at
+    them: the result's line was lost, and the finished agent read as running, then failed"""
+    d = journal_dir(Project(tmp_path))
+    events = [{"type": "started", "key": "k1", "agentId": "a1", "label": "measure:x", "phase": "Build"},
+              {"type": "result", "key": "k1", "agentId": "a1", "result": {"summary": f"one{sep}two", "findings": []}}]
+    (d / "journal.jsonl").write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events))
+    assert sep in (d / "journal.jsonl").read_text()  # written raw, as the runtime writes it
+    (a,) = scan_agents(tmp_path / "projects", NOW)
+    assert a["status"] == "done" and a["result"]["summary"] == f"one{sep}two"
+
+
+def test_a_journal_line_that_is_not_an_object_is_skipped(tmp_path):
+    d = journal_dir(Project(tmp_path))
+    (d / "journal.jsonl").write_text(
+        '3\n"x"\n[1]\nnull\n{"type": "started", "key": "k1", "agentId": "a1", "label": "measure:x"}\n'
+        '{"type": "result"\n{"type": "result", "key": "k1", "agentId": "a1", "result": {}}\n')
+    (a,) = scan_agents(tmp_path / "projects", NOW)
+    assert a["status"] == "done"
+
+
 def plan_with(**kw):
     raw = {"release": "1", "items": [{"name": "Item A", "key": "a", "before": [["design", ["design:a", "research:a"], 10]]}],
            "other": [{"name": "Other O", "stages": [["s", "job:o", 5]]}],

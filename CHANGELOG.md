@@ -37,6 +37,11 @@ off. With the internet answering, the flag draws exactly as before.
 
 Fixed before the first release:
 
+- A journal line whose result holds U+2028, U+2029 or U+0085 is read whole. The journal was split
+  with `str.splitlines()`, which splits at those characters too, so the line with an agent's
+  result was lost, and the finished agent read as running, then failed ("needs rerun"). A journal
+  line that is valid JSON but not an object is skipped (it failed every frame).
+
 - A detached job's stage (`{"progress", "total"}`) runs from the moment its progress file exists,
   even empty: it read "queued 0%" until its first unit finished, hours into a long job. It reads
   `<stage> 0/<total>` from the file's creation time (its birth time on macOS), with its planned
