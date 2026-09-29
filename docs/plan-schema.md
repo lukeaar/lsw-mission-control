@@ -130,6 +130,14 @@ A stage that re-ran after a later one started makes the later ones count again (
 when it began). A running stage past its estimate has at least 10 min left, or a quarter of its time
 so far.
 
+A label can have several attempts in one run: the Workflow runtime starts an agent again after an
+API error, and a resumed run starts its unfinished agents again. The stage reads the label's
+**latest attempt**, in journal order: a later result supersedes an earlier failed or unfinished
+attempt (a retry that returned is done), a failed attempt after a result is the latest (the stage
+failed), and an attempt begun after a result runs again. An attempt still unfinished when its
+agent starts again is over. A run-qualified label reads its own run's latest attempt; a bare label
+reads the latest attempt of the run whose attempts of it began last.
+
 ### The final merge and the tag
 
 The final merge is tracked by `build:<key>`, `review:<key>` and `fix:<key>` for the configured

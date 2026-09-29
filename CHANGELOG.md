@@ -37,6 +37,18 @@ off. With the internet answering, the flag draws exactly as before.
 
 Fixed before the first release:
 
+- A stage whose agent was retried reads the agent's latest attempt. The Workflow runtime starts an
+  agent again under the same label after an API error, and a resumed run starts its unfinished
+  agents again; the killed attempt leaves a `failed` event, or no end at all. The finished store
+  kept that attempt as running, and a label's attempts were ordered by their transcripts' first
+  timestamps, which need not follow the journal: a retry that returned could read ✕ "needs rerun".
+  Now every attempt is kept, and a run's attempts are in journal order: a later result supersedes
+  an earlier failed or unfinished attempt, a failure after a result is the latest, and an attempt
+  begun after a result runs again. An end event ends the attempt it names (its `agentId`), no longer
+  whichever attempt of its key started last, and an attempt with no end when its key starts again
+  is over. A run-qualified label reads its own run; a bare label reads the run whose attempts of it
+  began last. Agents at work lists a label's latest attempt in each run by the same order.
+
 - A journal line whose result holds U+2028, U+2029 or U+0085 is read whole. The journal was split
   with `str.splitlines()`, which splits at those characters too, so the line with an agent's
   result was lost, and the finished agent read as running, then failed ("needs rerun"). A journal

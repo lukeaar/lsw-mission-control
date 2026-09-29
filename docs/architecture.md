@@ -24,7 +24,8 @@ lsw-mission-control/
     plan.py               parse_stage, parse_plan, Item/OtherItem/NextItem/NextRelease/Plan, PlanLoader
     notes.py              Notes, read_notes, NotesLoader
     agents.py             transcript_facts, scan_agents, final_merge_labels, label_names, findings_of, stored_ok,
-                          store_since, FinishedStore, latest_by_label, review_needs_fix
+                          store_since, FinishedStore, journal_seq, later_attempt, latest_attempts,
+                          latest_by_label, review_needs_fix
     progress.py           Prog, Calibration, calibrate, JobFile, created_at, job_file, progress_of, stage_begun,
                           eta_from_json, stages_progress, stages_started, wait_for, in_wait_order, item_progress,
                           item_started, item_minutes, short_name
@@ -49,9 +50,9 @@ lsw-mission-control/
 ```
 
 Import rule: `render/*` imports `util`, `theme`, `plan`, `progress`, `widgets`, and the pure
-`net.network_flag` / `sources.testlogs.suite_colour`; it never starts or polls a source. Plugins
-import only `lsw_mission_control.plugin` (its `__all__`), `render.widgets`, `render.side`, `util`
-and `theme`.
+`net.network_flag` / `sources.testlogs.suite_colour` / `agents.latest_attempts`; it never starts or
+polls a source. Plugins import only `lsw_mission_control.plugin` (its `__all__`), `render.widgets`,
+`render.side`, `util` and `theme`.
 
 ### The launcher and the status line
 
@@ -288,8 +289,11 @@ Panels:
   `since` counted for no row, malformed records dropped,
   a running record rewritten at most every 10 min); waits (plan-schema.md, "Waits": every `after:`
   flag, a target listed later, a begun row, a target with no finish time or failed);
-  silence over 25 min means stopped; the tag row's phases and timing (the median of successful
-  runs, else `[release] fallback_minutes`); milestone wording.
+  silence over 25 min means stopped; a label's latest attempt (plan-schema.md, "A stage": in
+  journal order within a run, a bare label from the run whose attempts began last; every attempt
+  kept, one whose key starts again is over, an end event ends the agentId it names; a journal is
+  split at `\n` only); the tag row's phases and timing (the median of successful runs, else
+  `[release] fallback_minutes`); milestone wording.
 - Next release.
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
   live, stalled, plugin error), paused rows, the head and `also in motion`.

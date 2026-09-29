@@ -9,6 +9,7 @@ from rich.console import Group
 from rich.table import Table
 from rich.text import Text
 
+from lsw_mission_control.agents import latest_attempts
 from lsw_mission_control.render.widgets import bar, panel
 from lsw_mission_control.sources.testlogs import suite_colour
 from lsw_mission_control.theme import C
@@ -32,13 +33,10 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
             for _name, spec, _mins in item.stages:
                 paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))
     running = [a for a in running if a["label"] not in paused and f"{a['run']}/{a['label']}" not in paused]
-    # A resumed run starts a fresh agent under the same label; the stopped one it replaced is not at
-    # work, even after its replacement has finished (so compare against every agent, not just running).
-    newest: dict = {}
-    for a in agents:
-        k = (a["run"], a["label"])
-        if k not in newest or (a["t0"] or 0) > (newest[k]["t0"] or 0):
-            newest[k] = a
+    # A retried agent, or a resumed run, starts a fresh attempt under the same label; the one it
+    # replaced is not at work, even after its replacement has finished (so compare against every
+    # agent, not just running), and the latest is the latest in journal order.
+    newest = latest_attempts(agents)
     running = [a for a in running if newest[(a["run"], a["label"])] is a]
     running.sort(key=lambda a: -(a["t1"] or 0))
     shown, hidden = running, []
