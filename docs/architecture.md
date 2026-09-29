@@ -30,17 +30,18 @@ lsw-mission-control/
                           item_started, item_minutes, short_name
     net.py                NetRules, net_label, NET_CASES, FLAG_CASES, NetState, is_dashboard, etime_seconds,
                           network_critical, fit_list, network_flag, flag_verdict, check_net_cases
-    connectivity.py       the internet check's pure parts: Online, Conn, classify, connection, Machine,
-                          CLASSIFY_CASES, STALE_CASES, MACHINE_CASES, run_machine, check_connection_cases
+    connectivity.py       the internet check's pure parts: Online, Conn, classify, soft, connection, drawn,
+                          Machine, CLASSIFY_CASES, STALE_CASES, MACHINE_CASES, run_machine, check_connection_cases
     plugin.py             Plugin, PluginContext, CliFlag, LiveJob, SideCard, Flags, validate_options, load_plugins
     engine.py             Frame, Engine (sources, frames, safe_frame, render), error_where
-    app.py                Scroll, apply_keys, keys_loop, run_once, run_live
+    app.py                Scroll, apply_keys, keys_loop, run_once, refresh_connection, run_live
     reload.py             Reloader, user_args
     statusline.py         the Claude Code status line (stdlib, Python 3.9, runnable by path)
     testing.py            freeze, record_console, render_text, render_engine
     sources/              Source base; git.py GitSource; github.py GitHubSource; tokens.py TokenCounter,
                           model_family; usage_probe.py probe_usage, UsageProbe; testlogs.py test_logs, suite_colour;
-                          connectivity.py route_key, ask_internet, Bounded, ConnectivitySource
+                          connectivity.py route_key, interleave, connect_first, EyeballsConnection,
+                          ask_internet, Bounded, ConnectivitySource
     render/               widgets.py frame.py notes.py release.py next_release.py other.py side.py agents.py
                           usage.py logo.py guard.py
     templates/            launcher.py statusline_shim.py mission-control.toml status_plan.json status_notes.json
@@ -98,7 +99,7 @@ Frame(now, width, cfg, plan, plan_note, reload_note, notes, agents, labels, name
       live_job, live_job_error, plugin_errors, notes_note)
 Engine(cfg, flags, *, readonly, plugins, load_errors, no_plugins)
   .start_sources(probe) .ready() .build_frame(width) .frame(console) .safe_frame(console) .render(console)
-  .errors_for_once() .watched_files() .network_critical() .connection(); .ps_text (injectable),
+  .errors_for_once() .watched_files() .network_critical() .connection() .safe_connection(); .ps_text (injectable),
   .internet_check ([network] check_internet)
 Engine.frame / safe_frame -> (body, NetState(crit, conn), width)
 ```
@@ -116,7 +117,7 @@ panel in its own place; the rest of the frame draws.
 | Source | Interval | Store keys | Notes |
 |---|---|---|---|
 | `GitSource` | `[git] poll_s` 20 | `git` | HEAD, unpushed vs `<remote>/<main>`, branches, worktrees − 1, dirty |
-| `ConnectivitySource` | 1 s tick; a request every 5 s (2 s after a change) | `online` | route lookup by UDP connect (no packet), then `captive.apple.com` over http.client on a daemon thread bounded at 2 s; only with `[network] check_internet`; §7 |
+| `ConnectivitySource` | 1 s tick; a request every 5 s (2 s after a change) | `online` | route lookup by UDP connect (no packet), then `captive.apple.com` over http.client, connecting Happy Eyeballs style, 2 s from the start, on a daemon thread per route bounded at 2.5 s; only with `[network] check_internet`; §7 |
 | `GitHubSource` | `[github] poll_s` 120; timing every 600 | `release_gh`, `gh_timing` | the current plan's release via a callable; a failed call keeps the last answer for the same release |
 | `TokenCounter` | 30 s | `tokens`, `tokens_by_model` | all `~/.claude/projects/**/*.jsonl` of 8 days; `<usage dir>/tokens.json` |
 | `UsageProbe` | 20 min, skipped while usage.json < 15 min old | writes `<usage dir>/usage.json` | `claude -p --model haiku … ok` in `<usage dir>/probe-cwd`, killed at the first `rate_limit_event` or 60 s; never under `--once` |
@@ -204,7 +205,8 @@ two writers of one real `finished.json` must never race.
   file now holds.
 - `--check-net` on its own also imports every module and loads every plugin, so a gate that runs
   only it still refuses a broken edit. `--self-check` renders one frame through the live `Scroll`
-  at 150×50 into a null console, turns the logo once and feeds the key parser.
+  at 150×50 into a null console, draws the pinned row's other states through it (not connected,
+  network-critical, safe, unknown), turns the logo once and feeds the key parser.
 
 ---
 
@@ -221,12 +223,22 @@ two writers of one real `finished.json` must never race.
   tokens after the interpreter's options, `lsw-mc` as argv[0] or as the script of a Python argv[0],
   or a config marker.
 - The third state, NOT CONNECTED (`connectivity.py`, `sources/connectivity.py`): `Machine.tick(route,
-  ask, clock)` is the whole state machine (no route: offline at once, no request; a request every
-  5 s, every 2 s for three requests after a change of state or route, at once on a new route; a
-  failure with no answer while online is held for one recheck; a captive answer shows at once).
-  `connection(rec, now)` is the view a frame reads: older than 15 s is UNKNOWN. `network_flag(crit,
-  room, conn)`: OFFLINE outranks the rest (chip, why, the work in flight, the first that fits);
-  UNKNOWN adds `? connection unknown` when it fits. The chip's ink is `ink_on(C.AMBER)`, the theme's
+  ask, clock, wall)` is the whole state machine (no route: offline at once, no request; a request
+  every 5 s, every 2 s for three requests after a change of state or route, at once on a new route;
+  a failure with no answer, or an HTTP 4xx/5xx (`soft`), while online is held for one recheck; a
+  captive answer shows at once). `clock` times the cadence (monotonic in the source, so a wall clock
+  set back cannot stop it) and `wall` stamps each answer. A request (`EyeballsConnection`) has 2 s
+  from its start, name lookup included; `connect_first` tries every resolved address, families
+  taking turns (`interleave`), a new one every 0.25 s while the earlier ones go on (RFC 8305), so a
+  dead first address costs 0.25 s. `Bounded` caps the request's thread at 2.5 s (a hung lookup),
+  one live call per route and at most four in all, so a lookup hung on the network just left never
+  holds up the new one. `connection(rec, now)` is the view a frame reads: older than 15 s, or
+  stamped more than 1 s in the future, is UNKNOWN. The live loop calls `refresh_connection` on every
+  tick: a store read, and a redraw when `drawn(conn)` changed, so an answer reaches the screen
+  within a tick (1/8 s), not at the next data refresh. `network_flag(crit, room, conn)`: OFFLINE
+  outranks the rest (chip, why, the work in flight, the first that fits); UNKNOWN starts the flag
+  with `? ` in place of `● ` (its first cells, which no cropping removes) and adds
+  `connection unknown` when it fits. The chip's ink is `ink_on(C.AMBER)`, the theme's
   background or text, whichever contrasts more. `check_net_cases` also runs
   `check_connection_cases` (`N/N connection cases correct`). No test asks the internet: the
   scenarios put a fresh `Online` in the store, and the I/O tests use local servers.
@@ -243,13 +255,14 @@ two writers of one real `finished.json` must never race.
 Launch and modes:
 
 - `--once`, `--no-usage-probe`, `--check-net`, `--self-check` and plugin flags are matched as
-  exact tokens; unknown flags are ignored; `--check-net` prints its two lines and exits 1 on a
+  exact tokens; unknown flags are ignored; `--check-net` prints its three lines and exits 1 on a
   mismatch.
 - A first run builds the venv with a notice on stderr.
 - `--once` waits ≤ 25 s (git, the internet check's first answer if on, GitHub's first round if
   configured, every plugin ready), prints one
   frame, and exits 1 with the traceback on any frame or plugin error.
-- Live: the first frame after 1.5 s, built before `Live` starts; data every 5 s;
+- Live: the first frame after 1.5 s, built before `Live` starts; data every 5 s, the internet
+  check's answer on every tick (a redraw only when the row would change);
   `Live(screen=True, auto_refresh=False)`; the logo turns at 8 fps by rewriting only its cells, on
   the main loop (a frozen dashboard stops turning), and stops for good on an error.
 - Keys ↑/k ↓/j PgUp/b PgDn/space Home/g End/G q/Q Ctrl+C, cbreak without echo, partial escapes
@@ -288,7 +301,7 @@ Panels:
   `plan data as of HH:MM · X ago · probe|terminal`, placeholders while there is no data.
 - The logo beside Model usage from 100 columns when usage is ≥ 5 rows: square, two colours,
   turning, with the `[logo] caption` at its bottom right in faint.
-- The network row (not connected, network-critical, safe; `? connection unknown`); several
+- The network row (not connected, network-critical, safe; a `?` lead and `connection unknown`); several
   dashboards at once; the palette (`[theme]`).
 
 ---

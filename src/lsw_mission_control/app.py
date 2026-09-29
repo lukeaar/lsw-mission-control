@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.text import Text
 
+from lsw_mission_control.connectivity import drawn
 from lsw_mission_control.engine import Engine
 from lsw_mission_control.net import NetState
 from lsw_mission_control.render.frame import bottom_line
@@ -176,6 +177,17 @@ def run_once(engine: Engine, console: Console, wait_s: float = ONCE_WAIT_S) -> i
     return 0
 
 
+def refresh_connection(engine: Engine, scroll: Scroll) -> bool:
+    """Re-read the internet check's view into the pinned row (a store read and the clock, no I/O):
+    True when what the row draws changed, so the loop redraws it now rather than at the next data
+    refresh (every 5 s). A view whose only change is an older age is not a redraw."""
+    conn = engine.safe_connection()
+    if drawn(conn) == drawn(scroll.net.conn):
+        return False
+    scroll.net = NetState(scroll.net.crit, conn)
+    return True
+
+
 def run_live(engine: Engine, console: Console, reloader=None) -> None:
     time.sleep(FIRST_FRAME_AFTER_S)
     scroll = Scroll(engine.cfg.layout.max_width, engine.logo, scroll_envs(engine.cfg.compat.legacy_scroll_env))
@@ -209,6 +221,10 @@ def run_live(engine: Engine, console: Console, reloader=None) -> None:
                 wake.clear()
                 if quit_flag.is_set():
                     break
+                # The internet check's answer reaches the screen within a tick, not at the next data
+                # refresh: the indicator must be right in real time (what ps lists stays at 5 s).
+                if refresh_connection(engine, scroll):
+                    woke = True
                 if not woke and time.time() < next_data:
                     scroll.spin(console)  # the only work on a plain tick: a few cells redrawn
                     continue

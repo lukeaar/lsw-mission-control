@@ -128,13 +128,21 @@ The bottom-right flag has three states:
 render path. Every second it looks up the route to the internet in the kernel (a UDP connect: no
 packet is sent); no route (Wi-Fi off, cable out) reads `no network` at once, with no request.
 With a route it asks Apple's captive-portal check (`http://captive.apple.com/hotspot-detect.html`,
-the page macOS itself asks, with a 2 s timeout) every 5 s, every 2 s for three requests after the
-state or the route changes, and at once when the route changes. Only the page's `Success` body
-counts: a login page or a redirect reads `captive portal`, and silence `no answer in 2s`. A
-request that fails with no answer while the last answer was "online" is asked again 2 s later
-before the flag changes, so a single lost packet does not flash it. An answer older than 15 s is
-never shown as either: the flag adds `? connection unknown`. The check starts no process, so it
-is never listed as network work. `[network] check_internet = false` turns it off (the flag then
+the page macOS itself asks) every 5 s, every 2 s for three requests after the state or the route
+changes, and at once when the route changes. A request has 2 s from its start, name lookup
+included, and tries every address the name resolves to, a new one every 0.25 s while the earlier
+ones go on (Happy Eyeballs), so a network whose IPv6 is routed but broken does not read as
+silent. Only the page's `Success` body counts: a login page or a redirect reads `captive portal`,
+and silence `no answer in 2s`. A request that fails with no answer, or with a server error
+(`HTTP 503`), while the last answer was "online" is asked again 2 s later before the flag
+changes, so a single lost packet or one bad answer from Apple's server does not flash it. A name
+lookup still hung on the network just left never holds up the check on the new one, and a clock
+set back does not stop it (its cadence runs on the monotonic clock). The live view re-reads the
+answer on every tick of its loop (8 a second), so a change reaches the screen at once, not at
+the next 5 s data refresh. An answer older than 15 s, or stamped in the future (the clock was set
+back), is never shown as either: the flag starts with `?` in place of `●` (its first cells, so it
+reads at any width) and adds `connection unknown` when there is room. The check starts no
+process, so it is never listed as network work. `[network] check_internet = false` turns it off (the flag then
 shows only whether switching is safe).
 
 The flag lists every running process a network drop would kill: ssh/scp/sftp,

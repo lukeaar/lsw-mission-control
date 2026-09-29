@@ -168,7 +168,8 @@ class Engine:
 
     def ready(self) -> bool:
         """--once waits for this: git, the internet check's first answer (if on; it takes at most
-        its 2 s timeout), GitHub's first round (if configured; answered or not) and every plugin."""
+        2.5 s: the request's 2 s, and a hung name lookup is given up 0.5 s after that), GitHub's
+        first round (if configured; answered or not) and every plugin."""
         if not self.store.get("git"):
             return False
         if self.internet_check and self.store.get("online") is None:
@@ -346,12 +347,20 @@ class Engine:
                         body = panel(Text(err, style=f"bold {C.RED_SOFT}"), p.name)
             if body is not None:
                 parts.append(Guarded(body, lambda e, name=name: self._stand_in(name, e, f"drawing the {name} panel")))
-        return Group(*parts), NetState(self.network_critical(), self.connection()), width
+        return Group(*parts), NetState(self.network_critical(), self.safe_connection()), width
 
     def connection(self) -> Conn | None:
         """The internet check's view now (None when the check is off): its last answer, or
         "unknown" when that is too old."""
         return connection(self.store.get("online"), now()) if self.internet_check else None
+
+    def safe_connection(self) -> Conn | None:
+        """connection(), except that a view that cannot be read is "unknown", never a guess. A store
+        read and the clock, no I/O: the live view calls it on every tick of its loop."""
+        try:
+            return self.connection()
+        except Exception:  # noqa: BLE001
+            return Conn(UNKNOWN, "not read") if self.internet_check else None
 
     def network_critical(self) -> list[str] | None:
         return network_critical(self.net_rules, self.cfg.network.dashboard_markers, self.own_labels, ps_text=self.ps_text,
@@ -375,10 +384,7 @@ class Engine:
                 crit = self.network_critical()
             except Exception:  # noqa: BLE001
                 crit = None
-            try:
-                conn = self.connection()
-            except Exception:  # noqa: BLE001 — never a guess: "unknown"
-                conn = Conn(UNKNOWN, "not read") if self.internet_check else None
+            conn = self.safe_connection()
             width = min(console.size.width, self.cfg.layout.max_width)
             return (Group(title_line(self.cfg.title, self.cfg.subtitle, self.reload_note, self.plans.note, self.notes.note),
                           Text(""),

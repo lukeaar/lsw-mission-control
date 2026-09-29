@@ -33,8 +33,8 @@ def test_check_net_prints_the_contract():
     assert check_net_cases(out=lines.append) == 0
     assert lines == [f"{len(NET_CASES)}/{len(NET_CASES)} network cases correct",
                      f"{len(FLAG_CASES)}/{len(FLAG_CASES)} indicator cases correct",
-                     "30/30 connection cases correct"]
-    assert len(NET_CASES) == 28 and len(FLAG_CASES) == 20
+                     "39/39 connection cases correct"]
+    assert len(NET_CASES) == 28 and len(FLAG_CASES) == 22
 
 
 def test_check_net_reports_a_mismatch():

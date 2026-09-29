@@ -25,8 +25,14 @@ from pathlib import Path
 
 import lsw_mission_control
 from lsw_mission_control.config import ConfigError, find_config, load_config
-from lsw_mission_control.net import NetRules, check_net_cases
+from lsw_mission_control.connectivity import CAPTIVE, OFFLINE, ONLINE, UNKNOWN, Conn
+from lsw_mission_control.net import NetRules, NetState, check_net_cases
 from lsw_mission_control.plugin import Flags, load_plugin_class, load_plugins
+
+# The pinned row's states --self-check draws beyond its frame's own: not connected with work in
+# flight, network-critical, safe, and an answer too old with ps failed.
+SELF_CHECK_ROWS = (NetState(["git push (1m)"], Conn(OFFLINE, CAPTIVE)), NetState(["git push (1m)"], Conn(ONLINE)),
+                   NetState([], Conn(ONLINE)), NetState(None, Conn(UNKNOWN, "last checked 40s ago")))
 
 BOOL_FLAGS = {
     "--once": "print one snapshot and exit",
@@ -99,6 +105,11 @@ def self_check(cfg, flags: Flags, plugins, load_errors) -> int:
         console.set_alt_screen(True)
         console.print(scroll)
         scroll.spin(console)
+        # Nothing is started, so that frame's row says the internet check has not answered yet: draw
+        # the row's other states too, through the same Scroll and this config.
+        for net in SELF_CHECK_ROWS:
+            scroll.net = net
+            console.print(scroll)
         console.set_alt_screen(False)
         rest, quit_ = apply_keys(scroll, b"jjk \x1b[B\x1b[6~b\x1b[5~Gg\x1bOAq\x1b[")
         if rest != b"\x1b[" or not quit_:

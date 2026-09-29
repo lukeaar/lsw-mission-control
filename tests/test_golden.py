@@ -245,7 +245,7 @@ CONN = {
 
 
 @pytest.mark.parametrize("state", sorted(CONN))
-@pytest.mark.parametrize("width", (80, 150))
+@pytest.mark.parametrize("width", (80, 100, 150))  # 100: the Key leaves room for the flag, not its note
 def test_bottom_line_connection(update_golden, state, width):
     crit, conn = CONN[state]
     plain, styled = testing.render_text(bottom_line(width, crit, "▲3 ▼12", conn), width)

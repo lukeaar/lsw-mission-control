@@ -27,7 +27,7 @@ def test_check_net_contract(tmp_path):
     p = Project(tmp_path)
     r = lswmc("--project", str(p.root), "--check-net")
     assert r.returncode == 0, r.stderr
-    assert r.stdout == "28/28 network cases correct\n20/20 indicator cases correct\n30/30 connection cases correct\n"
+    assert r.stdout == "28/28 network cases correct\n22/22 indicator cases correct\n39/39 connection cases correct\n"
 
 
 def test_check_net_with_project_cases(tmp_path):

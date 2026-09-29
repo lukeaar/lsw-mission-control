@@ -13,7 +13,8 @@ one project uses, to that project's [network] config), add a real ps line to NET
 The flag has three states: NOT CONNECTED (the background internet check, connectivity.py, found
 no working internet; it outranks the others, and lists any network work in flight beside it, as
 that work will fail), NETWORK-CRITICAL (network work in flight) and safe to switch. When the
-internet check's last answer is too old, the flag says "connection unknown" rather than guess.
+internet check's last answer is too old, the flag leads with "?" instead of "●" and adds
+"connection unknown" when there is room, rather than guess.
 """
 
 from __future__ import annotations
@@ -187,10 +188,13 @@ FLAG_CASES = [
      Conn(OFFLINE, CAPTIVE), 50, "offline, 5 at risk"),
     (["pip install (2m)"] * 30, Conn(OFFLINE, NO_ANSWER), 30, "offline, 30 at risk"),
     (["git push (1m)"], Conn(OFFLINE, CAPTIVE), 0, "offline"),  # the chip always shows, the rest when it fits
-    # the internet check's answer is too old: never a guess
+    # the internet check's answer is too old: never a guess, and never read as online, even when
+    # the room leaves no space for the words (the flag leads with '?')
     ([], Conn(UNKNOWN, "last checked 40s ago"), 60, "safe, connection unknown"),
     (None, Conn(UNKNOWN, "not checked yet"), 60, "unknown, connection unknown"),
     (["git push (1m)"], Conn(UNKNOWN, "last checked 40s ago"), 60, "1, connection unknown"),
+    ([], Conn(UNKNOWN, "last checked 40s ago"), 30, "safe, connection unknown"),
+    (["git push (1m)"], Conn(UNKNOWN, "clock moved"), 0, "1, connection unknown"),
 ]
 
 @dataclass(frozen=True)
@@ -204,7 +208,10 @@ class NetState:
 
 NET_CHIP = " NETWORK-CRITICAL "
 OFFLINE_CHIP = " ⊘ NOT CONNECTED "
-UNKNOWN_NOTE = "? connection unknown"
+# An answer too old: the flag STARTS with this (cropping takes the right end, so at any width it
+# never reads as online), and ends with the note when there is room.
+UNKNOWN_LEAD = "? "
+UNKNOWN_NOTE = "connection unknown"
 # Every dashboard's own polling makes these; a plugin adds its own (its ssh hosts).
 OWN_LABELS = frozenset({"gh"})
 LEGACY_MARKER = ".claude/status.py"
@@ -333,23 +340,34 @@ def network_flag(crit: list[str] | None, room: int, conn: Conn | None = None) ->
     """Whether switching networks is safe now. When it is not, the chip always shows, and the
     list of what is at risk shortens ('+N more') to fit the room the Key leaves. `None` means
     the check itself failed: then it never says safe. `conn` is the internet check's view (None:
-    the check is off): NOT CONNECTED outranks the rest; an answer too old says so."""
+    the check is off): NOT CONNECTED outranks the rest; an answer too old leads with '?' in place
+    of the '●' (in its first cells, which no cropping removes) and says so when there is room."""
     if conn is not None and conn.state == OFFLINE:
         return _offline_flag(crit, room, conn.why)
-    if crit is None:
+    unknown = conn is not None and conn.state == UNKNOWN
+    if unknown:
+        flag = Text()
+        flag.append(UNKNOWN_LEAD, style=f"bold {C.AMBER}")
+        if crit is None:
+            flag.append("network check failed", style=C.AMBER)
+        elif not crit:
+            flag.append("safe to switch networks", style=C.GREEN)
+    elif crit is None:
         flag = Text("● network check failed", style=C.AMBER)
     elif not crit:
         flag = Text("● safe to switch networks", style=C.GREEN)
     else:
+        flag = Text()
+    if crit:
         # The chip is a span, not the Text's base style: a base style would paint the list (and the
         # justify padding) red on red too.
-        flag = Text()
         flag.append(NET_CHIP, style=f"bold {C.BG} on {C.RED}")
         # What is at risk matters more than for how long: ages go before names do.
-        listed = _at_risk(crit, max(0, room - len(NET_CHIP) - 2))
-        if len(listed) <= max(0, room - len(NET_CHIP) - 2):
+        left = max(0, room - flag.cell_len - 2)
+        listed = _at_risk(crit, left)
+        if len(listed) <= left:
             flag.append("  " + listed, style=f"bold {C.RED_SOFT}")
-    if conn is not None and conn.state == UNKNOWN and flag.cell_len + 2 + len(UNKNOWN_NOTE) <= room:
+    if unknown and flag.cell_len + 2 + len(UNKNOWN_NOTE) <= room:
         flag.append("  " + UNKNOWN_NOTE, style=C.AMBER)
     return flag
 
@@ -372,9 +390,9 @@ def flag_verdict(crit: list[str] | None, room: int, conn: Conn | None = None) ->
                 rest = ""
         n = _count(rest, crit) if rest else 0
         return f"offline, {n} at risk" if n else "offline"
-    unknown = plain.endswith(UNKNOWN_NOTE)
+    unknown = plain.startswith(UNKNOWN_LEAD)  # the note at the end is optional: the lead is not
     if unknown:
-        plain = plain.removesuffix("  " + UNKNOWN_NOTE)
+        plain = plain.removeprefix(UNKNOWN_LEAD).removesuffix("  " + UNKNOWN_NOTE)
     if "safe to switch" in plain:
         verdict: str | int = "safe"
     elif NET_CHIP not in plain:

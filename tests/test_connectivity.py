@@ -4,6 +4,7 @@ wiring into the engine and the live view."""
 
 from __future__ import annotations
 
+import contextlib
 import http.server
 import io
 import socket
@@ -14,8 +15,9 @@ import time
 import pytest
 from rich.console import Console
 
+from lsw_mission_control import app, util
 from lsw_mission_control import connectivity as cx
-from lsw_mission_control.app import Scroll
+from lsw_mission_control.app import Scroll, refresh_connection
 from lsw_mission_control.config import ConfigError, load_config
 from lsw_mission_control.connectivity import (
     CAPTIVE,
@@ -32,9 +34,17 @@ from lsw_mission_control.connectivity import (
     classify,
     connection,
 )
-from lsw_mission_control.net import NET_CHIP, OFFLINE_CHIP, UNKNOWN_NOTE, check_net_cases, network_flag
+from lsw_mission_control.net import (
+    NET_CHIP,
+    OFFLINE_CHIP,
+    UNKNOWN_LEAD,
+    UNKNOWN_NOTE,
+    NetState,
+    check_net_cases,
+    network_flag,
+)
 from lsw_mission_control.sources import Source
-from lsw_mission_control.sources.connectivity import Bounded, ConnectivitySource, ask_internet, route_key
+from lsw_mission_control.sources.connectivity import Bounded, ConnectivitySource, ask_internet, interleave, route_key
 from lsw_mission_control.store import Store
 
 from conftest import NOW
@@ -320,6 +330,146 @@ def test_bounded_never_waits_past_its_timeout_and_never_doubles_a_hung_call():
     assert Bounded(lambda: 1 / 0, 0.5)() == (False, UNREACHABLE)
 
 
+@contextlib.contextmanager
+def dead_address():
+    """A local address that never answers a connect: its listener never accepts and its queue is
+    full, so the kernel drops the SYN (as on a network whose IPv6 is routed but broken)."""
+    lst = socket.socket()
+    lst.bind(("127.0.0.1", 0))
+    lst.listen(1)
+    addr, fill = lst.getsockname(), []
+    try:
+        for _ in range(64):
+            s = socket.socket()
+            s.setblocking(False)
+            s.connect_ex(addr)
+            fill.append(s)
+            probe = socket.socket()
+            probe.settimeout(0.2)
+            try:
+                probe.connect(addr)
+            except TimeoutError:
+                break
+            finally:
+                probe.close()
+        else:
+            pytest.skip("this kernel answers connects to a full accept queue: no dead address to test with")
+        yield addr
+    finally:
+        for s in fill:
+            s.close()
+        lst.close()
+
+
+def resolving_to(monkeypatch, *addrs):
+    """The check's name resolves to these (host, port)s, in this order."""
+    infos = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", a) for a in addrs]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: list(infos))
+
+
+CHECK = "http://check.invalid/hotspot-detect.html"
+
+
+def test_a_dead_first_address_costs_a_stagger_not_the_request(monkeypatch):
+    """Every resolved address is tried, a new one every 0.25 s without dropping the ones in flight
+    (Happy Eyeballs): a dead first address no longer reads as no answer while the internet works."""
+    srv = Server()
+    good = ("127.0.0.1", srv.httpd.server_address[1])
+    try:
+        with dead_address() as dead:
+            for addrs in ((dead, good), (dead, dead, good), (good, dead)):
+                resolving_to(monkeypatch, *addrs)
+                t0 = time.monotonic()
+                assert ask_internet(2.0, CHECK) == OK
+                assert time.monotonic() - t0 < cx.STAGGER_S * addrs.index(good) + 0.5
+            # every address dead: no answer at the request's own deadline, not the thread's cap
+            resolving_to(monkeypatch, dead, dead)
+            b = Bounded(lambda: ask_internet(0.4, CHECK), 1.5)
+            t0 = time.monotonic()
+            assert b() == (False, NO_ANSWER)
+            assert 0.35 < time.monotonic() - t0 < 1.0
+            b.thread.join(1.0)
+            assert not b.thread.is_alive()  # it ended by itself: the next round asks afresh
+    finally:
+        srv.close()
+
+
+def test_an_answer_just_inside_the_deadline_counts():
+    """The request's deadline (2 s) is shorter than the cap on its thread (2.5 s), so an answer
+    near the limit is never a race between the two."""
+    lst = socket.socket()
+    lst.bind(("127.0.0.1", 0))
+    lst.listen(1)
+
+    def answer_late():
+        c, _ = lst.accept()
+        c.recv(4096)
+        time.sleep(0.5)
+        c.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n" % len(cx.APPLE_SUCCESS) + cx.APPLE_SUCCESS)
+        c.close()
+    threading.Thread(target=answer_late, daemon=True).start()
+    try:
+        b = Bounded(lambda: ask_internet(0.6, f"http://127.0.0.1:{lst.getsockname()[1]}/"), 0.6 + 0.5)
+        assert b() == OK
+    finally:
+        lst.close()
+
+
+def test_the_families_take_turns():
+    four = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (f"10.0.0.{i}", 80)) for i in (1, 2)]
+    six = [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", (f"fd00::{i}", 80, 0, 0)) for i in (1, 2, 3)]
+    got = [info[4][0] for info in interleave(six + four)]
+    assert got == ["fd00::1", "10.0.0.1", "fd00::2", "10.0.0.2", "fd00::3"]  # the resolver's first family first
+    assert interleave([]) == []
+
+
+def test_a_call_hung_on_one_route_never_blocks_another():
+    release, calls = threading.Event(), []
+
+    def hang():
+        calls.append(1)
+        release.wait(5)
+        return OK
+    b = Bounded(hang, 0.1, max_live=2)
+    assert b("4:10.0.0.2") == (False, NO_ANSWER)
+    assert b("4:10.0.0.2") == (False, NO_ANSWER) and len(calls) == 1  # the same route: not asked twice
+    assert b("4:192.168.1.5") == (False, NO_ANSWER) and len(calls) == 2  # a new route asks at once
+    assert b("6:fd00::2") == (False, NO_ANSWER) and len(calls) == 2  # but never more than max_live threads
+    release.set()
+    for th in list(b.threads.values()):
+        th.join(2)
+    assert b("6:fd00::2") == OK and len(calls) == 3
+
+
+def test_a_lookup_hung_on_the_old_network_never_blocks_the_new_one():
+    """The owner leaves a network whose name lookups hang for one that works: the new network is
+    asked at once, and reads online, while the old lookup is still stuck."""
+    release, net, t = threading.Event(), {"route": "4:10.0.0.2", "hung": False}, [NOW]
+
+    def ask():
+        if net["route"] == "4:10.0.0.2" and net["hung"]:
+            release.wait(10)
+            return False, NO_DNS
+        return OK
+    store = Store()
+    src = ConnectivitySource(store, route=lambda: net["route"], ask=Bounded(ask, 0.2), clock=lambda: t[0],
+                             wall=lambda: t[0])
+    try:
+        src.poll_once()
+        assert store.get("online").ok
+        net["hung"] = True
+        for dt in (5, 2, 2, 5, 2):
+            t[0] += dt
+            src.poll_once()
+        assert store.get("online") == Online(False, NO_ANSWER, t[0])  # the old network: no answer
+        net["route"] = "4:192.168.1.5"  # a new network, which answers
+        t[0] += 1
+        src.poll_once()
+        assert store.get("online") == Online(True, "", t[0])
+    finally:
+        release.set()
+
+
 # ── the source ──────────────────────────────────────────────────────────────────────────────
 def test_the_source_publishes_into_the_store_and_starts_no_process(monkeypatch):
     """The check is never listed as network work: it runs in the dashboard's own process (ps
@@ -332,7 +482,8 @@ def test_the_source_publishes_into_the_store_and_starts_no_process(monkeypatch):
         store = Store()
         t = [NOW]
         src = ConnectivitySource(store, route=lambda: "4:127.0.0.1",
-                                 ask=Bounded(lambda: ask_internet(1.0, srv.url), 1.0), clock=lambda: t[0])
+                                 ask=Bounded(lambda: ask_internet(1.0, srv.url), 1.0), clock=lambda: t[0],
+                                 wall=lambda: t[0])
         src.poll_once()
         assert store.get("online") == Online(True, "", NOW)
         t[0] += 1
@@ -349,7 +500,11 @@ def test_the_source_publishes_into_the_store_and_starts_no_process(monkeypatch):
 def test_the_source_defaults_are_the_real_check():
     src = ConnectivitySource(Store())
     assert src.route is route_key and isinstance(src.ask, Bounded) and src.ask.fn is ask_internet
-    assert src.ask.timeout_s == 2.0 and cx.CHECK_URL == "http://captive.apple.com/hotspot-detect.html"
+    assert cx.CHECK_URL == "http://captive.apple.com/hotspot-detect.html"
+    # the request's own 2 s deadline (lookup, connect, answer) ends it before the thread's cap
+    assert cx.TIMEOUT_S == 2.0 and src.ask.timeout_s == cx.CAP_S == 2.5
+    # the cadence runs on the monotonic clock, the answers carry the dashboard's
+    assert src.clock is time.monotonic and src.wall is util.now
 
 
 # ── the engine, the frame and the live view ─────────────────────────────────────────────────
@@ -399,8 +554,9 @@ def _bottom(plain: str) -> str:
     (Online(False, NO_NETWORK, NOW - 1), "  300  1  00:20 git push origin main\n",
      f"{OFFLINE_CHIP}  no network · git push (20s)"),
     (Online(True, "", NOW - 3), "  300  1  00:20 git push origin main\n", f"{NET_CHIP}  git push (20s)"),
-    (Online(True, "", NOW - 20), "", f"● safe to switch networks  {UNKNOWN_NOTE}"),
-    (None, "", f"● safe to switch networks  {UNKNOWN_NOTE}"),
+    (Online(True, "", NOW - 20), "", f"{UNKNOWN_LEAD}safe to switch networks  {UNKNOWN_NOTE}"),
+    (None, "", f"{UNKNOWN_LEAD}safe to switch networks  {UNKNOWN_NOTE}"),
+    (Online(True, "", NOW + 60), "", f"{UNKNOWN_LEAD}safe to switch networks  {UNKNOWN_NOTE}"),  # clock set back
 ])
 def test_the_whole_frame_shows_the_three_states(tmp_path, online, ps, want):
     from lsw_mission_control import testing
@@ -444,6 +600,110 @@ def test_the_live_view_pins_not_connected(tmp_path):
     assert out.file.getvalue().splitlines()[-1].endswith(f"{OFFLINE_CHIP}  {NO_ANSWER}")
 
 
+def test_the_row_takes_a_new_answer_without_a_data_refresh(tmp_path):
+    """refresh_connection re-reads the check's view into the pinned row, and asks for a redraw only
+    when what the row draws changed: a new state or a new reason, not an older age."""
+    p = Project(tmp_path)
+    midway(p)
+    e = p.engine()
+    s = Scroll(150, e.logo)
+    s.body, s.net, _ = e.safe_frame(Console(file=io.StringIO(), width=150, height=40))
+    crit = s.net.crit
+    assert s.net.conn == Conn(ONLINE) and not refresh_connection(e, s)
+    e.store.set("online", Online(False, CAPTIVE, NOW))
+    assert refresh_connection(e, s) and s.net == NetState(crit, Conn(OFFLINE, CAPTIVE))
+    assert not refresh_connection(e, s)
+    e.store.set("online", Online(False, NO_NETWORK, NOW))
+    assert refresh_connection(e, s) and s.net.conn == Conn(OFFLINE, NO_NETWORK)  # a new reason is drawn
+    e.store.set("online", Online(True, "", NOW - 20))
+    assert refresh_connection(e, s) and s.net.conn == Conn(UNKNOWN, "last checked 20s ago")
+    e.store.set("online", Online(True, "", NOW - 40))
+    assert not refresh_connection(e, s)  # only older: the row draws the same
+    e.store.set("online", Online(True, "", NOW))
+    assert refresh_connection(e, s) and s.net == NetState(crit, Conn(ONLINE))
+
+
+class Tap(io.StringIO):
+    """A terminal that notes when each write happened."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lock = threading.Lock()
+        self.writes: list[tuple[float, str]] = []
+
+    def write(self, s: str) -> int:
+        with self.lock:
+            self.writes.append((time.monotonic(), s))
+        return super().write(s)
+
+    def first(self, text: str, after: float, within: float) -> float | None:
+        """Seconds from `after` to the first write at or after it that shows `text` (None: none
+        within `within` seconds)."""
+        end = time.monotonic() + within
+        while True:
+            with self.lock:
+                hit = next((t for t, s in self.writes if t >= after and text in s), None)
+            if hit is not None or time.monotonic() > end:
+                return None if hit is None else hit - after
+            time.sleep(0.01)
+
+
+def test_the_live_view_shows_a_new_answer_within_a_tick(tmp_path, monkeypatch):
+    """The indicator must be right in real time: an answer reaches the owner's screen on the live
+    loop's next tick (1/8 s), not at its next data refresh (every 5 s; pushed out of reach here)."""
+    monkeypatch.setattr(app, "FIRST_FRAME_AFTER_S", 0.0)
+    monkeypatch.setattr(app, "DATA_EVERY_S", 600.0)
+    p = Project(tmp_path)
+    midway(p)
+    p.ps = ""  # nothing in flight: the row's words are the check's alone
+    e = p.engine()
+    stop, real = threading.Event(), e.safe_connection
+
+    def read():
+        if stop.is_set():
+            raise KeyboardInterrupt  # how the live view ends
+        return real()
+    monkeypatch.setattr(e, "safe_connection", read)
+    tap = Tap()
+    live = threading.Thread(target=app.run_live, args=(e, Console(file=tap, width=150, height=50, force_terminal=True,
+                                                                   color_system=None)), daemon=True)
+    t0 = time.monotonic()
+    live.start()
+    try:
+        assert tap.first("safe to switch networks", t0, 5.0) is not None
+        for rec, shown in ((Online(False, CAPTIVE, NOW), f"{OFFLINE_CHIP}  {CAPTIVE}"),
+                           (Online(True, "", NOW), "● safe to switch networks"),
+                           (Online(True, "", NOW - 20), f"{UNKNOWN_LEAD}safe to switch networks"),
+                           (Online(False, NO_NETWORK, NOW), f"{OFFLINE_CHIP}  {NO_NETWORK}")):
+            t1 = time.monotonic()
+            e.store.set("online", rec)
+            took = tap.first(shown, t1, 3.0)
+            assert took is not None and took < 1.0, (shown, took)
+    finally:
+        stop.set()
+        live.join(5)
+    assert not live.is_alive()
+
+
+def test_the_gate_draws_not_connected_through_the_live_row(tmp_path, monkeypatch, capsys):
+    """--self-check starts nothing, so its frame's row says only that the check has not answered
+    yet; it draws the row's other states too, through Scroll and the adopter's config, so a NOT
+    CONNECTED chip that cannot be drawn fails the gate."""
+    from lsw_mission_control import cli, net
+    from lsw_mission_control.plugin import Flags
+
+    p = Project(tmp_path)
+    midway(p)
+    cfg = load_config(p.dot / "mission-control.toml")
+    assert cli.self_check(cfg, Flags(), [], []) == 0
+
+    def broken(*a, **kw):
+        raise RuntimeError("the chip")
+    monkeypatch.setattr(net, "_offline_flag", broken)
+    assert cli.self_check(cfg, Flags(), [], []) == 1
+    assert "RuntimeError: the chip" in capsys.readouterr().err
+
+
 def test_not_connected_reads_on_its_own_chip():
     """A chip carries its own background, as NETWORK-CRITICAL's does: it reads the same on any
     terminal, and in any [theme] whose NETWORK-CRITICAL chip reads."""
@@ -474,7 +734,7 @@ def test_check_net_reports_a_connection_mismatch(monkeypatch):
     assert check_net_cases(out=lines.append) == 1
     assert lines[0].endswith("network cases correct")  # the reload gate's phrase is unchanged
     assert any(x.startswith("CONNECTION MISMATCH broken on purpose") for x in lines)
-    assert lines[-1] == "30/31 connection cases correct"
+    assert lines[-1] == "39/40 connection cases correct"
 
 
 def test_a_frame_never_waits_on_the_network(tmp_path, monkeypatch):

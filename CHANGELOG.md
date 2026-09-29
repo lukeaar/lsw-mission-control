@@ -21,11 +21,19 @@ with why: `no network`, `captive portal`, `no answer in 2s`, ...): this computer
 internet. It outranks NETWORK-CRITICAL and "safe to switch", and lists the network work in flight
 beside it (that work will fail). A background check in the dashboard's own process decides it,
 never on the render path: a route lookup every second (no route: not connected at once, no
-request), and Apple's captive-portal page every 5 s (2 s right after a change; 2 s timeout), where
-only its `Success` body counts. An answer older than 15 s adds `? connection unknown` rather than
-guess. `--once` waits for the first answer (at most 2 s), `--check-net` prints a third line
-(`N/N connection cases correct`), and `[network] check_internet = false` turns the check off.
-With the internet answering, the flag draws exactly as before.
+request), and Apple's captive-portal page every 5 s (2 s right after a change), where only its
+`Success` body counts. A request has 2 s from its start, name lookup included, and tries every
+address the name resolves to, a new one every 0.25 s (Happy Eyeballs), so a network whose IPv6 is
+routed but broken does not read as not connected. Silence, or a server error (`HTTP 503`), while
+online is asked again once before it shows; a lookup hung on the network just left never holds up
+the new one; the cadence runs on the monotonic clock, so a clock set back cannot stop it. The live
+view shows a new answer within a tick of its loop (1/8 s), not at its next 5 s data refresh. An
+answer older than 15 s, or stamped in the future (the clock was set back), starts the flag with
+`?` in place of `●` (its first cells, so it reads at any width) and adds `connection unknown` when
+there is room, rather than guess. `--once` waits for the first answer (at most 2.5 s),
+`--check-net` prints a third line (`N/N connection cases correct`), `--self-check` also draws the
+row's other states through the live view, and `[network] check_internet = false` turns the check
+off. With the internet answering, the flag draws exactly as before.
 
 Fixed before the first release:
 
