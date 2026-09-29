@@ -36,7 +36,7 @@ class Prog:
         self.start = start  # when its first stage started
         self.end = end  # when its last stage finished, once done
         self.alert = alert  # stuck: its stage shows in red
-        self.paused = False  # held by the owner ("paused": true on an other item)
+        self.paused = False  # held by the owner ("paused": true on an other item or a release item)
         self.waits = False  # it runs after work that is not done: a tie for "next to finish" goes to that work
 
 
@@ -412,7 +412,7 @@ def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Cali
     return stages_progress(plan.before(key) + [
         ("build", f"build:{key}", item.build), ("review", f"review:{key}", item.review),
         ("fix", f"fix:{key}", item.fix)], labels, now=now, cal=cal, default_fix_share=default_fix_share,
-        wait_before=wait_before, after=after)
+        wait_before=wait_before, after=after, paused=item.paused)
 
 
 def item_started(plan: Plan, key: str | None, labels: dict) -> bool:

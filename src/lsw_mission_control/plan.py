@@ -30,6 +30,7 @@ class Item:
     fix: int
     flags: tuple[str, ...] = ()
     before: tuple[Stage, ...] = ()
+    paused: bool = False  # held by the owner: its unfinished stages read "paused", never failed or queued
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,7 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
         if key is not None and it.get("before"):
             before = tuple(parse_stage(st, it["name"]) for st in _list(it["before"], f"before of {name!r}"))
             pre[str(key)] = before
-        items.append(Item(*fields_, before))
+        items.append(Item(*fields_, before, bool(it.get("paused"))))
     other = []
     for o in _list(d.get("other", []), "other"):
         o = _obj(o, "each of other")

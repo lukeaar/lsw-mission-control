@@ -263,6 +263,25 @@ def test_release_after_a_failed_item_counts_its_rerun(tmp_path):
     assert "after access" in dark and "~4h15 · 18:28" in dark
 
 
+def test_release_a_paused_item_is_held_not_failed(tmp_path):
+    """an item the owner holds ("paused": true) reads "paused" with no finish of its own, whether its
+    agent failed (Accessibility audit) or nothing has begun (Security review); the header counts it
+    as paused, never failed, and what runs after it still waits for its time left."""
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["items"][4]["paused"] = True
+    plan["items"][5]["paused"] = True
+    plan["items"][3]["flags"] = ["after:a11y"]
+    p.plan(plan)
+    plain = release_text(p)
+    audit, security = row(plain, "Accessibility audit"), row(plain, "Security review")
+    for r in (audit, security):
+        assert "paused" in r and "needs rerun" not in r and "queued" not in r and "·" not in r.split("━")[-1]
+    assert "2 paused" in plain and "failed" not in plain
+    assert "after access" in row(plain, "Dark mode polish")
+
+
 def test_release_items_always_have_a_finish_time(tmp_path):
     """a release item's wait can lack a finish time only through a target that lacks one, and none
     does: a cycle (a typo) is broken, and every row still gets a time."""
@@ -346,3 +365,20 @@ def test_next_after_a_finished_target(tmp_path):
     sync = row(next_text(p), "Offline sync")
     assert "planned" in sync and "after" not in sync
 
+
+
+def test_a_paused_release_items_agent_is_not_at_work(tmp_path):
+    """Agents at work leaves out the agents of a release item the owner holds, as it does an other
+    item's: a held item's run was stopped, whatever its journal last said (export's fix runs midway)."""
+    from lsw_mission_control.render.agents import agents_panel
+    p = Project(tmp_path)
+    midway(p)
+
+    def agents_text() -> str:
+        return testing.render_text(agents_panel(p.engine().build_frame(120), 120, []), 120)[0]
+
+    assert "fix:export" in agents_text()
+    plan = release_plan()
+    plan["items"][1]["paused"] = True
+    p.plan(plan)
+    assert "fix:export" not in agents_text()

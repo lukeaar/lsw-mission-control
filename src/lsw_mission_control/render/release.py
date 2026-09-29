@@ -103,6 +103,10 @@ def release_panel(f: Frame, width: int):
                           wait_before=0.0 if wait is None else wait[0], after=after)
         if i >= last and "owner_ok" in it.flags and not item_started(plan, it.key, labels):
             p.current, p.waiting = "your go-ahead", True
+        if it.paused and p.current != "done":
+            # Held by the owner: its stopped agent is not a failure and it is not queued. It keeps its
+            # time left, so the release's finish and what runs after it still count it.
+            p.current, p.failed, p.paused = "paused", False, True
         return p
 
     # A failed item's time is its re-run's (the release's finish counts it), so what runs after it waits that long.
@@ -159,7 +163,8 @@ def release_panel(f: Frame, width: int):
     fractions = [p.fraction for _n, p in rows] + [merge["fraction"], tag["fraction"]]
     overall = 1.0 if released else sum(sz * fr for sz, fr in zip(sizes, fractions)) / max(1.0, sum(sizes))
     nfailed = sum(p.failed for _n, p in rows) + (merge["status"] == "failed") + (tag["status"] == "failed")
-    nover = sum(p.over > 0 and not p.failed for _n, p in rows)
+    nover = sum(p.over > 0 and not p.failed and not p.paused for _n, p in rows)
+    npaused = sum(p.paused for _n, p in rows)
     first = bar(overall, METER_W, C.GREEN if released else eta_colour(release_at - t_now))
     pct = 100 if released else min(99, int(overall * 100))  # never "100%" before it is out
     words = rc.words
@@ -169,6 +174,8 @@ def release_panel(f: Frame, width: int):
         phrases.append(Text(f"{nfailed} failed", style=C.RED_SOFT))
     if nover:
         phrases.append(Text(f"{nover} overrun", style=C.AMBER))
+    if npaused:
+        phrases.append(Text(f"{npaused} paused", style=C.AMBER))
     if released:
         phrases.append(Text.assemble((f"{words['released']} ", C.GREEN), (clock(release_at), f"bold {C.GREEN}")))
     else:

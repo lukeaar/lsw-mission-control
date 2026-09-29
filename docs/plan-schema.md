@@ -46,7 +46,7 @@ item is common), so the plan can carry its own explanations.
 | `next` | no | the release after this one (its panel shows only when it has items) |
 | *plugin keys* | per plugin | a plugin may own keys; it validates them, and a plan it rejects is not loaded |
 
-### `items`: `{name, key, build, review, fix, flags?, before?}`
+### `items`: `{name, key, build, review, fix, flags?, before?, paused?}`
 
 - Agents are labelled `build:<key>`, `review:<key>` and `fix:<key>`; `build`/`review`/`fix` are
   planned minutes (scaled by the release's calibration once 3 of a kind have finished).
@@ -56,6 +56,9 @@ item is common), so the plan can carry its own explanations.
   `owner_ok` (shows "your go-ahead" until it starts). See "Waits" below.
 - A fix whose review found nothing of severity blocker/major/minor is skipped (`–`); until the
   review is done its time is weighted by the fix share.
+- `paused: true`: held by the owner (its workflow was stopped). It reads "paused", with no finish
+  of its own, never "failed" or "queued"; the header counts it as paused, its agents leave Agents
+  at work, and it keeps its time left, so the release's finish and what runs after it count it.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 

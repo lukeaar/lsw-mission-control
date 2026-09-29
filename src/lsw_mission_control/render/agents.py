@@ -32,6 +32,11 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
         if item.paused:
             for _name, spec, _mins in item.stages:
                 paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))
+    for item in f.plan.items:
+        if item.paused and item.key is not None:
+            paused.update(f"{kind}:{item.key}" for kind in ("build", "review", "fix"))
+            for _name, spec, _mins in f.plan.before(item.key):
+                paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))
     running = [a for a in running if a["label"] not in paused and f"{a['run']}/{a['label']}" not in paused]
     # A retried agent, or a resumed run, starts a fresh attempt under the same label; the one it
     # replaced is not at work, even after its replacement has finished (so compare against every

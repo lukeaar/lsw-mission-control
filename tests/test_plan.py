@@ -36,7 +36,7 @@ def test_parse_plan_shapes():
         "release": 2, "note": "ignored", "items": [
             {"name": "A", "key": None},
             {"name": "B", "key": 7, "build": "10", "review": 5, "flags": ["after:a", 3],
-             "before": [["design", "design:7", 20]]},
+             "before": [["design", "design:7", 20]], "paused": 1},
         ],
         "other": [{"name": "O", "stages": [["s", None, 1]], "paused": 1, "after": "A", "after_server": "yes", "note": "x"}],
         "next": {"release": "3", "about": "later", "items": [
@@ -46,6 +46,7 @@ def test_parse_plan_shapes():
     assert plan.release == "2"
     a, b = plan.items
     assert a.key is None and b.key == "7" and b.build == 10 and b.flags == ("after:a", "3")
+    assert a.paused is False and b.paused is True
     assert plan.before("7") == [("design", "design:7", 20.0)] and plan.before(None) == []
     o = plan.other[0]
     assert o.paused is True and o.after == "A" and o.after_server is True
