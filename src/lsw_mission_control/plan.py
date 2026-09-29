@@ -31,6 +31,7 @@ class Item:
     flags: tuple[str, ...] = ()
     before: tuple[Stage, ...] = ()
     paused: bool = False  # held by the owner: its unfinished stages read "paused", never failed or queued
+    paused_until: float | None = None  # when the hold ends (epoch s): its time left and what waits on it count it
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,13 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
         if key is not None and it.get("before"):
             before = tuple(parse_stage(st, it["name"]) for st in _list(it["before"], f"before of {name!r}"))
             pre[str(key)] = before
-        items.append(Item(*fields_, before, bool(it.get("paused"))))
+        until = it.get("paused_until")
+        if until is not None:
+            try:
+                until = iso(str(until))
+            except ValueError:
+                raise ValueError(f"paused_until of {name!r} must be an ISO time with its offset") from None
+        items.append(Item(*fields_, before, bool(it.get("paused")) or until is not None, until))
     other = []
     for o in _list(d.get("other", []), "other"):
         o = _obj(o, "each of other")

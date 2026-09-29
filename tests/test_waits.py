@@ -382,3 +382,32 @@ def test_a_paused_release_items_agent_is_not_at_work(tmp_path):
     plan["items"][1]["paused"] = True
     p.plan(plan)
     assert "fix:export" not in agents_text()
+
+
+def test_release_a_hold_with_an_end_counts_the_hold(tmp_path):
+    """"paused_until" holds an item until a time: the row says when it resumes, and what runs after
+    it waits for the hold AND its re-run (a day, then 120 + 30 + 45 x 0.7 min), not its re-run alone."""
+    import datetime as dt
+
+    from conftest import NOW
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["items"][4]["paused_until"] = dt.datetime.fromtimestamp(NOW + 86400, tz=dt.timezone.utc).isoformat()
+    plan["items"][3]["flags"] = ["after:a11y"]
+    p.plan(plan)
+    plain = release_text(p)
+    audit = row(plain, "Accessibility audit")
+    assert "paused" in audit and "from " in audit and "failed" not in plain
+    dark = row(plain, "Dark mode polish")
+    assert "after access" in dark and "~1d" in dark
+
+
+def test_parse_paused_until():
+    from lsw_mission_control.plan import parse_plan
+    plan = parse_plan({"release": "1", "items": [
+        {"name": "A", "key": "a", "paused_until": "2026-10-04T13:00:00+10:00"}, {"name": "B", "key": "b"}]})
+    a, b = plan.items
+    assert a.paused is True and a.paused_until == 1791082800.0 and b.paused is False and b.paused_until is None
+    with pytest.raises(ValueError, match="paused_until of 'A'"):
+        parse_plan({"release": "1", "items": [{"name": "A", "key": "a", "paused_until": "Sunday"}]})

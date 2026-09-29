@@ -46,7 +46,7 @@ item is common), so the plan can carry its own explanations.
 | `next` | no | the release after this one (its panel shows only when it has items) |
 | *plugin keys* | per plugin | a plugin may own keys; it validates them, and a plan it rejects is not loaded |
 
-### `items`: `{name, key, build, review, fix, flags?, before?, paused?}`
+### `items`: `{name, key, build, review, fix, flags?, before?, paused?, paused_until?}`
 
 - Agents are labelled `build:<key>`, `review:<key>` and `fix:<key>`; `build`/`review`/`fix` are
   planned minutes (scaled by the release's calibration once 3 of a kind have finished).
@@ -59,6 +59,9 @@ item is common), so the plan can carry its own explanations.
 - `paused: true`: held by the owner (its workflow was stopped). It reads "paused", with no finish
   of its own, never "failed" or "queued"; the header counts it as paused, its agents leave Agents
   at work, and it keeps its time left, so the release's finish and what runs after it count it.
+- `paused_until: "<ISO time with offset>"`: held until then (implies `paused`). The row says
+  "from <when>", and its time left includes the hold, so what runs after it, and the release's
+  finish, move past the hold.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 

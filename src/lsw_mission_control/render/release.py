@@ -107,6 +107,10 @@ def release_panel(f: Frame, width: int):
             # Held by the owner: its stopped agent is not a failure and it is not queued. It keeps its
             # time left, so the release's finish and what runs after it still count it.
             p.current, p.failed, p.paused = "paused", False, True
+            if it.paused_until is not None:
+                # The hold itself takes time: nothing of it runs before the hold ends.
+                p.remaining = max(0.0, it.paused_until - t_now) + (p.remaining or 0.0)
+                p.resume = it.paused_until
         return p
 
     # A failed item's time is its re-run's (the release's finish counts it), so what runs after it waits that long.

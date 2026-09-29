@@ -80,7 +80,7 @@ Theme(bg, surface, border, text, muted, faint, accent, accent_soft, green, amber
 C.GREEN …                                             # the palette in use; theme.use(theme) at start-up
 Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, gh_timing, tokens, tokens_by_model,
                                                       # online (connectivity.Online)
-Plan(release, items, other, next, plugin_data, pre); Item(name, key, build, review, fix, flags, before, paused)
+Plan(release, items, other, next, plugin_data, pre); Item(name, key, build, review, fix, flags, before, paused, paused_until)
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags)
 PlanLoader(path, plugins).refresh() -> Plan           # mtime-gated; a bad parse keeps the last good plan; .note
 Notes(waiting_on_owner, in_progress_elsewhere, mtime); NotesLoader(path).refresh() -> Notes

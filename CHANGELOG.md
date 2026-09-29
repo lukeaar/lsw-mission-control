@@ -18,7 +18,8 @@ plugins. Its render is identical on identical inputs; the differences are all on
 
 A release item can be held (`"paused": true`), as an Other item can: it reads "paused" instead of
 "failed"/"needs rerun" or "queued" with a finish time, the header counts it (`N paused`), and its
-agents leave Agents at work; the release's finish still counts its time left.
+agents leave Agents at work; the release's finish still counts its time left. With
+`"paused_until": "<ISO time>"` the row says "from <when>" and the hold's own length counts too.
 
 The network indicator has a third state, **NOT CONNECTED** (an amber chip, ` ⊘ NOT CONNECTED `,
 with why: `no network`, `captive portal`, `no answer in 2s`, ...): this computer has no working

@@ -127,9 +127,10 @@ def work_row(t: Table, name: str, p: Prog, bar_w: int, release: bool = False, jo
                   bar(1.0, bar_w, C.GREEN) + Text(" 100%", style=C.GREEN), Text("✓", style=C.GREEN))
         return
     if p.paused:
+        resume = getattr(p, "resume", None)
         t.add_row(Text(name, style=C.MUTED), chips_of(p.marks, release, join), Text("paused", style=C.AMBER),
                   bar(p.fraction, bar_w, C.SURFACE) + Text(f" {p.fraction * 100:3.0f}%", style=C.MUTED),
-                  Text("—", style=C.MUTED))
+                  Text(f"from {clock(resume)}", style=C.AMBER) if resume and resume > t_now else Text("—", style=C.MUTED))
         return
     colour = eta_colour(p.remaining, p.failed)
     if p.failed:

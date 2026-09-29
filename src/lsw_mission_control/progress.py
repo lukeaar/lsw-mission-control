@@ -37,6 +37,7 @@ class Prog:
         self.end = end  # when its last stage finished, once done
         self.alert = alert  # stuck: its stage shows in red
         self.paused = False  # held by the owner ("paused": true on an other item or a release item)
+        self.resume = None  # when a held release item resumes ("paused_until"), if the plan says
         self.waits = False  # it runs after work that is not done: a tie for "next to finish" goes to that work
 
 
