@@ -124,7 +124,6 @@ def scan_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600) -> 
                     prev["status"] = "failed"  # its key started again: the runtime retried it
                 a = {"id": str(e.get("agentId")), "label": str(e.get("label") or "?"), "phase": str(e.get("phase") or ""),
                      "status": "running", "result": None, "run": run_dir.name, "seq": seq}
-                attempts.pop(a["id"], None)  # one agent started twice: one record, as the store keys it
                 attempts[a["id"]] = last_of_key[key] = a
             elif kind in ("result", "failed", "error"):
                 aid = e.get("agentId")

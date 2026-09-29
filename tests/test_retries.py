@@ -276,3 +276,16 @@ def test_agents_at_work_lists_only_the_latest_attempt(tmp_path):
     plain = testing.render_text(agents_panel(f, 120, []), 120)[0]
     assert "1 running" in plain and plain.count(LABEL) == 1
     assert [a["id"] for a in f.agents if a["status"] == "running"] == ["a2"]
+
+
+def test_agents_at_work_lists_one_row_for_two_keys_of_one_label_both_running(tmp_path):
+    """two keys under one label, both running in one run: the panel lists the latest attempt once"""
+    p = Project(tmp_path)
+    p.plan({"release": "1.0.0", "items": [], "other": [{"name": "Cost model", "stages": [["measure", LABEL, 60]]}]})
+    j = Journal(p.projects)
+    j.start("a1", NOW - 30 * MIN, NOW - 60, key="k1").start("a2", NOW - 40 * MIN, NOW - 20, key="k2")
+    j.write()
+    f = p.engine().build_frame(120)
+    assert sorted(a["id"] for a in f.agents if a["status"] == "running") == ["a1", "a2"]
+    plain = testing.render_text(agents_panel(f, 120, []), 120)[0]
+    assert plain.count(LABEL) == 1

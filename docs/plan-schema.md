@@ -126,6 +126,9 @@ keeps its creation time where the filesystem keeps one, so the new run would rea
 old one. The units' pace assumes units of one size: a job that runs several at once, or the largest
 first, reads high until its units even out, and gets a truer time from `eta_json`.
 
+An attempt whose journal line is written before its transcript reads failed until the transcript's
+first line appears (a moment, normally).
+
 A stage that re-ran after a later one started makes the later ones count again (a job counts from
 when it began). A running stage past its estimate has at least 10 min left, or a quarter of its time
 so far.
