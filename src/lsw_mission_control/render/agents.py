@@ -41,8 +41,10 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
     running = [a for a in running if a["label"] not in paused and f"{a['run']}/{a['label']}" not in paused]
     # A retried agent, or a resumed run, starts a fresh attempt under the same label; the one it
     # replaced is not at work, even after its replacement has finished (so compare against every
-    # agent, not just running), and the latest is the latest in journal order.
-    newest = latest_attempts(agents)
+    # agent that returned, not just running), and the latest is the latest in journal order. An
+    # attempt that died replaces nothing (latest_by_label's rule): one still at work stays listed.
+    live = {id(a) for a in running}
+    newest = latest_attempts([a for a in agents if a["status"] == "done" or id(a) in live])
     running = [a for a in running if newest[(a["run"], a["label"])] is a]
     running.sort(key=lambda a: -(a["t1"] or 0))
     shown, hidden = running, []

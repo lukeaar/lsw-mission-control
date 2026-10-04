@@ -177,10 +177,18 @@ so far.
 A label can have several attempts in one run: the Workflow runtime starts an agent again after an
 API error, and a resumed run starts its unfinished agents again. The stage reads the label's
 **latest attempt**, in journal order: a later result supersedes an earlier failed or unfinished
-attempt (a retry that returned is done), a failed attempt after a result is the latest (the stage
-failed), and an attempt begun after a result runs again. An attempt still unfinished when its
-agent starts again is over. A run-qualified label reads its own run's latest attempt; a bare label
-reads the latest attempt of the run whose attempts of it began last.
+attempt (a retry that returned is done) or an earlier result, and an attempt begun after a result
+runs again. An attempt still unfinished when its agent starts again is over. A run-qualified label
+reads its own run's latest attempt; a bare label reads the latest attempt of the run whose attempts
+of it began last.
+
+A **failed** attempt died: an API error the runtime's retries did not get past, a skip, or silence
+past `[agents] silent_stopped_min` (its workflow stopped). That is never a verdict on the work, so it
+never undoes an attempt that returned or still runs: the label reads the latest of those instead
+(in its own run for a run-qualified label, in any run for a bare one), and reads failed only when it
+has none. A stage runs while any of its labels runs, its time counted from its labels that did not
+die (a run at work on a stage normally runs its died agents again); it reads failed, "needs rerun"
+with its whole time again, only when none of its labels runs and one of them failed.
 
 ### The final merge and the tag
 

@@ -95,11 +95,28 @@ Fixed before the first release:
   timestamps, which need not follow the journal when a transcript is missing or has no time yet.
   (The ✕ "needs rerun" a returned retry showed was the journal split in the entry above.) Now
   every attempt is kept, and a run's attempts are in journal order: a later result supersedes
-  an earlier failed or unfinished attempt, a failure after a result is the latest, and an attempt
-  begun after a result runs again. An end event ends the attempt it names (its `agentId`), no longer
-  whichever attempt of its key started last, and an attempt with no end when its key starts again
-  is over. A run-qualified label reads its own run; a bare label reads the run whose attempts of it
-  began last. Agents at work lists a label's latest attempt in each run by the same order.
+  an earlier failed or unfinished attempt, and an attempt begun after a result runs again (a
+  failure after a result no longer undoes it: the entry below). An end event ends the attempt it
+  names (its `agentId`), no longer whichever attempt of its key started last, and an attempt with
+  no end when its key starts again is over. A run-qualified label reads its own run; a bare label
+  reads the run whose attempts of it began last. Agents at work lists a label's latest attempt in
+  each run by the same order.
+
+- An agent that died never undoes work that returned, and a stage with an agent at work reads
+  running. Two network outages killed the agents of every workflow running. Some were retries of
+  agents that had already returned (a resumed run starts agents again), and the label read the
+  retry: a fix that returned read "fix failed · needs rerun". Others belonged to a stage a new run
+  was already working on, and the stage read failed while its other agents ran. A workflow agent
+  fails only when it dies (an API error the runtime's retries did not get past, or a skip) or goes
+  silent past `silent_stopped_min` (its workflow stopped), never as a verdict on its work. Now a
+  failed attempt never undoes an attempt of its label that returned or still runs: the label reads
+  the latest of those (a later result still replaces an earlier one; a run-qualified label in its
+  own run, a bare one in any run), and fails only when it has none. Agents at work no longer hides
+  an agent at work behind a later attempt of its label that died. A stage runs while any of its
+  labels runs, timed from the labels that did not fail (their earlier starts are not an overrun),
+  and reads failed, "needs rerun" with its whole time again, only when none of them runs and one
+  failed, as before. The release's finish and the calibration follow: a stage that returned before
+  its retry died is done, in the time it took.
 
 - A detached job's stage (`{"progress", "total"}`) runs from the moment its progress file exists,
   even empty: it read "queued 0%" until its first unit finished, hours into a long job. It reads

@@ -71,6 +71,39 @@ def test_failed_and_paused():
     assert not p.failed and p.current == "build" and p.remaining == (40 + 20 + 21) * 60
 
 
+FACTS = [("facts", ["research:x", "questions:x", "critic:x"], 90.0), ("build", "build:x", 60.0)]
+DIED = a("critic:x", "failed", NOW - 3 * HOUR, NOW - 2.9 * HOUR)  # killed in an earlier run, no result
+
+
+def test_a_stage_runs_while_one_of_its_labels_runs():
+    """a label that died beside one running now (the run that runs it runs the died one again later):
+    the stage runs, never fails, and its time counts from its labels that did not die (the died
+    attempt's earlier start is no overrun)"""
+    labels = {"questions:x": a("questions:x", "running", NOW - 20 * MIN, NOW - 30), "critic:x": DIED}
+    p = sp(FACTS, labels)
+    assert not p.failed and p.current == "facts" and not p.waiting and p.over == 0
+    assert [m[0] for m in p.marks] == ["◉", "○"]
+    assert p.remaining == (70 + 60) * 60 and p.fraction == pytest.approx(20 / (20 + 130))
+    # one of them done as well: running, from the first of them to start
+    labels["research:x"] = a("research:x", "done", NOW - 40 * MIN, NOW - 25 * MIN)
+    p = sp(FACTS, labels)
+    assert not p.failed and p.current == "facts" and p.remaining == (50 + 60) * 60
+    # held by the owner: held, as before
+    p = sp(FACTS, labels, paused=True)
+    assert not p.failed and p.current == "facts" and p.marks[0][0] == "◉"
+
+
+def test_a_stage_with_a_label_that_died_and_none_running_needs_a_rerun():
+    """unchanged: nothing of it runs and a label of it died with no result, whether the rest are not
+    begun or done; its time left is its re-run"""
+    for labels in ({"critic:x": DIED}, {"research:x": a("research:x", "done", NOW - 4 * HOUR, NOW - 3.5 * HOUR),
+                                        "questions:x": a("questions:x", "done", NOW - 3.5 * HOUR, NOW - 3 * HOUR),
+                                        "critic:x": DIED}):
+        p = sp(FACTS, labels)
+        assert p.failed and p.current == "facts failed" and [m[0] for m in p.marks] == ["✕", "○"]
+        assert p.remaining == (90 + 60) * 60
+
+
 def test_done_and_fix_not_needed():
     labels = {"build:x": a("build:x", t0=NOW - 3000, t1=NOW - 2000),
               "review:x": a("review:x", t0=NOW - 1900, t1=NOW - 1000, findings=[{"severity": "nit"}])}

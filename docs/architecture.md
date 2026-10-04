@@ -310,7 +310,9 @@ Panels:
   `since` counted for no row, malformed records dropped,
   a running record rewritten at most every 10 min); waits (plan-schema.md, "Waits": every `after:`
   flag, a target listed later, a begun row, a target with no finish time or failed);
-  silence over 25 min means stopped; a label's latest attempt (plan-schema.md, "A stage": in
+  silence over 25 min means stopped; a failed attempt undoes no attempt that returned or runs,
+  nor hides it from Agents at work; a stage with a label running runs, timed from those not
+  failed, and fails only when none runs; a label's latest attempt (plan-schema.md, "A stage": in
   journal order within a run, a bare label from the run whose attempts began last; every attempt
   kept, one whose key starts again is over, an end event ends the agentId it names; a journal is
   split at `\n` only); the tag row's phases and timing (the median of successful runs, else

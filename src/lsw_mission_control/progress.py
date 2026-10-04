@@ -325,14 +325,17 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
             current = name
             marks.append(("◉", C.AMBER))
             continue
-        if any(a["status"] == "failed" for a in found):
+        # A label reads failed only once every attempt of it died (latest_by_label). The stage needs a
+        # re-run only while none of its labels runs: a run working on it runs the died ones again.
+        if any(a["status"] == "failed" for a in found) and not any(a["status"] == "running" for a in found):
             failed = True
             marks.append(("✕", C.RED_SOFT))
             progressed += max(0.0, max(t1s) - min(t0s)) if t0s and t1s else 0.0  # the fill stays
             remaining += minutes * 60  # a re-run
             current = f"{name} failed"
             continue
-        started = min((a["t0"] or now) for a in found)
+        # Running: its time counts from its labels that did not die (a died attempt is an earlier run's).
+        started = min((a["t0"] or now) for a in found if a["status"] != "failed")
         elapsed = now - started
         left = minutes * 60 - elapsed
         # Overrun: past the plan AND the calibrated estimate, so a stage within its plan is no alarm.

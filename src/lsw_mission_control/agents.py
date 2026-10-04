@@ -337,24 +337,40 @@ def latest_attempts(agents: list[dict]) -> dict[tuple[str, str], dict]:
 def latest_by_label(agents: list[dict], now: float, silent_stopped_s: float) -> dict[str, dict]:
     """Each label's state, from its LATEST attempt. A run-qualified label ("wf_<run>/label") reads
     that run's latest attempt in journal order: a later result supersedes an earlier failed or
-    unfinished attempt, and a later failure or a later start supersedes a result. A bare label reads
-    the latest attempt of the run whose attempts of it began last. A stopped workflow writes nothing
-    to its journal, so an agent silent for longer than `silent_stopped_s` reads as failed. An agent
-    of an earlier release (FinishedStore.merge marks it) is no row's."""
-    current = [a for a in agents if not a.get("earlier_release")]
+    unfinished attempt, or an earlier result, and a later start supersedes a result. A bare label
+    reads the latest attempt of the run whose attempts of it began last. A stopped workflow writes
+    nothing to its journal, so an agent silent for longer than `silent_stopped_s` reads as failed.
+
+    A failed attempt died (an API error the runtime's retries did not get past, a skip, a stopped
+    workflow): it is never a verdict on the work, which an agent returns as its result. So it never
+    undoes an attempt that returned or still runs: where the latest attempt failed, the label reads
+    the latest of those (in its own run for a run-qualified label, in any run for a bare one), and
+    it reads failed only when it has none. An agent of an earlier release (FinishedStore.merge marks
+    it) is no row's."""
+    current = []
+    for a in agents:
+        if a.get("earlier_release"):
+            continue
+        if a["status"] == "running" and (not a["t1"] or now - a["t1"] > silent_stopped_s):
+            a = dict(a, status="failed")
+        current.append(a)
     began: dict = {}
     for a in current:
         k = (a["run"], a["label"])
         began[k] = max(began.get(k, 0.0), a["t0"] or 0.0)
+    # The attempts that did not die: each run's latest, and each label's latest in any run.
+    alive = latest_attempts([a for a in current if a["status"] != "failed"])
+    alive_any: dict = {}
+    for (_run, label), a in alive.items():
+        if label not in alive_any or later_attempt(a, alive_any[label]):
+            alive_any[label] = a
     out: dict = {}
     newest_run: dict = {}
     for (run, label), a in latest_attempts(current).items():
-        if a["status"] == "running" and (not a["t1"] or now - a["t1"] > silent_stopped_s):
-            a = dict(a, status="failed")
-        out[f"{run}/{label}"] = a
+        out[f"{run}/{label}"] = alive.get((run, label), a) if a["status"] == "failed" else a
         if label not in newest_run or began[(run, label)] > newest_run[label]:
             newest_run[label] = began[(run, label)]
-            out[label] = a
+            out[label] = alive_any.get(label, a) if a["status"] == "failed" else a
     return out
 
 
