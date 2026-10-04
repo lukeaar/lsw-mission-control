@@ -108,8 +108,10 @@ def validate(argv: list[str]) -> int:
         _check(f"plugin {pl.name}", True)
     try:
         plan = parse_plan(json.loads(cfg.plan_file.read_text()), plugins)
+        # `later` by its releases: a misspelt key is ignored like any unknown one, and reads "later no"
         _check("plan", True, f"{cfg.plan_file.name}: release {plan.release}, {len(plan.items)} items, "
-                             f"{len(plan.other)} other, next {'yes' if plan.next else 'no'}")
+                             f"{len(plan.other)} other, next {'yes' if plan.next else 'no'}, "
+                             f"later {' '.join(r.release for r in plan.later) or 'no'}")
     except Exception as e:  # noqa: BLE001
         good = _check("plan", False, f"{cfg.plan_file}: {type(e).__name__}: {e}") and good
     try:

@@ -140,6 +140,34 @@ def test_agents_of_an_item_whose_hold_ended_are_at_work_again(tmp_path):
     assert "fix:export" in agents_text()
 
 
+def test_a_hold_ends_at_its_very_second(tmp_path):
+    """At paused_until itself the hold is over: a11y (its build stopped 2 h ago) reads "hold ended",
+    export (fix active 40 s ago) and startup (build active 4 min ago, not yet silent) their real
+    stages. One second before it, all three still read "paused"."""
+    p = Project(tmp_path)
+    midway(p)
+    hold(p, a11y=0, export=0, startup=0)
+    plain = release_text(p)
+    assert "hold ended" in row(plain, "Accessibility audit") and eta(row(plain, "Accessibility audit")) == "not resumed"
+    assert "fix" in row(plain, "Export to CSV") and "build +" in row(plain, "Faster startup")
+    assert "1 not resumed" in plain and "paused" not in plain
+    hold(p, a11y=1, export=1, startup=1)
+    plain = release_text(p)
+    assert all("paused" in row(plain, n) for n in ("Accessibility audit", "Export to CSV", "Faster startup"))
+
+
+@pytest.mark.parametrize("silent, ended", ((10 * MIN, False), (10 * MIN + 1, True)))
+def test_work_at_the_hold_end_itself_has_resumed_it(tmp_path, silent, ended):
+    """a11y's hold ended 10 min ago; its build finished then: last active at paused_until itself, it
+    has resumed the item (at or after the end counts). Last active a second before: not resumed."""
+    p = Project(tmp_path)
+    midway(p)
+    hold(p, a11y=-10 * MIN)
+    p.runs.clear()
+    p.agent("build:a11y", status="done", start_ago=50 * MIN, quiet_s=silent, run="wf_run-z")
+    assert ("hold ended" in row(release_text(p), "Accessibility audit")) is ended
+
+
 @pytest.mark.parametrize("width", (80, 120))
 def test_holds_golden(tmp_path, update_golden, width):
     """Every kind of hold in one release panel: a11y's ended with nothing resumed, export's ended

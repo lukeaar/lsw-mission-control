@@ -295,6 +295,11 @@ Panels:
 
 - The title: the project chip, `  mission control`, `%a %d %b · %H:%M:%S`, and any notes.
 - Waiting on you.
+- Every work table (the release, next, later and other panels below) fits its width exactly from
+  75 columns up (`widgets.work_table`): a stages column too wide to leave the names 6 cells
+  (`ITEM_MIN`) is cut, its dots ending in `…`, but never below 16 (`STAGES_MIN`); under 80 columns
+  the names get what is left, never under 1 cell (under 75, rich shares the rest of the cut among
+  the columns).
 - Release: the head meter (≤ 99% until released), `done/n items ready`, failed and overrun counts,
   `release out HH:MM (in X)` / `released HH:MM`, live rows, `● N finished`, the final merge and the
   tag row (`[release] tag_row`), `after:` / `after_all` / `owner_ok`, a `null` key is done; stage
@@ -312,8 +317,9 @@ Panels:
   `[release] fallback_minutes`); milestone wording; held items (`paused`, and `paused_until` held
   until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
   resumed` while nothing of the item has run since).
-- Next release, then each later release (`later`) in order, all with one stage width: an item not
-  yet begun waits on the release before (`[release] later_wait`), never this one.
+- Next release, then each later release (`later`) in order, each sizing its stage column by its own
+  items (a later release never changes the panels before it): an item not yet begun waits on the
+  release before (`[release] later_wait`), never this one.
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
   live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
   head and `also in motion`.

@@ -173,11 +173,17 @@ def label_names(plan: Plan, fm: FinalMergeCfg) -> dict[str, str]:
         for _stage, spec, _m in item.stages:
             for label in _spec_labels(spec):
                 names[label] = item.name
-    for rel in (plan.next, *plan.later):  # the releases after this one: work begun on them early
-        for item in (rel.items if rel else ()):
+    for item in (plan.next.items if plan.next else ()):  # work begun early on the next release
+        for _stage, spec, _m in item.stages:
+            for label in _spec_labels(spec):
+                names[label] = item.name
+    # and on the releases after it, never over a name given above: a key typed twice keeps naming the
+    # nearer release's item (or the other work's) in Agents at work
+    for rel in plan.later:
+        for item in rel.items:
             for _stage, spec, _m in item.stages:
                 for label in _spec_labels(spec):
-                    names[label] = item.name
+                    names.setdefault(label, item.name)
     return names
 
 

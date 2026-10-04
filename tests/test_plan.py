@@ -150,6 +150,12 @@ def with_change(path: str, value):
     ("next.items.0.build", float("nan"), "build of 'N' must be a number"),
     ("next", [1], "next must be an object"),
     ("later", {"release": "3"}, "later must be a list"),  # written like next: one release, not a list
+    # an empty object or any other value but a list: not read as "no later releases" in silence
+    ("later", {}, "later must be a list"),
+    ("later", "", "later must be a list"),
+    ("later", 0, "later must be a list"),
+    ("later", False, "later must be a list"),
+    ("later", None, None),  # null: none, as when it is absent
     ("later.0", [1], "later[0] must be an object"),
     ("later.0.items", "L", "later[0].items must be a list"),
     ("later.0.items.0", 3, "each of later[0].items must be an object"),

@@ -22,6 +22,8 @@ LABEL_W = 12  # the label column of the side and usage panels ("last release")
 METER_W = 24  # every single meter: the release, a plugin's job, the plan limits
 STAGE_W, WHEN_W = 15, 18  # fixed columns: stage name, "~6h41 · Sat 00:46"
 CHIP_JOIN = "─"  # one-character lines between stage dots, in every panel
+STAGES_MIN = 16  # the least stages column fit_stages() cuts to: the tag row's "CI, tag, release" sits in it
+ITEM_MIN = 6  # the least the names get beside a stages column cut to make room: what 80 columns leave them ("Expo…")
 
 
 def bar(fraction: float, width: int, colour: str) -> Text:
@@ -94,25 +96,39 @@ def stages_width(plan: Plan, fm: FinalMergeCfg) -> int:
     lines fit whole and centre on one axis."""
     most = max([3 + len(plan.before(it.key)) for it in plan.items if it.key] + [len(o.stages) for o in plan.other]
                + [len(fm.stages)], default=3)
-    return max(16, most + len(CHIP_JOIN) * (most - 1))
+    return max(STAGES_MIN, most + len(CHIP_JOIN) * (most - 1))
+
+
+def fit_stages(width: int, stages_w: int) -> int:
+    """The stages column a work table draws: `stages_w`, cut where it would leave the names less
+    than ITEM_MIN, never below STAGES_MIN. A row of many stages then ends its dots in "…" (the stage
+    column beside them still names the running one) instead of pushing the names, and with them the
+    finish times, out of the table."""
+    # what is left beside the border and gaps (4 + 8), the fixed columns, the least bar and its share
+    spare = width - 4 - 8 - STAGE_W - WHEN_W - (8 + 5) - ITEM_MIN
+    return min(stages_w, max(STAGES_MIN, spare))
 
 
 def table_widths(width: int, plan: Plan, fm: FinalMergeCfg, stages_w: int | None = None) -> tuple[int, int]:
     """(item column, bar) widths that fit the dashboard exactly, so nothing gets truncated:
     the panel's border and padding take 4, the four gaps between five columns take 8. Names
-    get the room first; the bar keeps at least 8."""
+    get the room first; the bar keeps at least 8. Beside the stages column work_table draws
+    (fit_stages()), names keep at least ITEM_MIN from 80 columns up; narrower, what is left, but
+    never less than one cell (a column of no width, or less, ran its rows past the panel's edge and
+    cut their finish times)."""
     room = width - 4 - ((stages_w or stages_width(plan, fm)) + STAGE_W + WHEN_W) - 8
     longest = max(len(n) for n in [it.name for it in plan.items] + [o.name for o in plan.other] + [fm.name])
     item_w = max(16, min(longest, room - 5 - 8))
     bar_w = max(8, min(40, room - 5 - item_w))
-    return room - 5 - bar_w, bar_w
+    return max(1, room - 5 - bar_w), bar_w
 
 
 def work_table(header: str, width: int, plan: Plan, fm: FinalMergeCfg, stages_w: int | None = None) -> tuple[Table, int]:
+    stages_w = fit_stages(width, stages_w or stages_width(plan, fm))
     item_w, bar_w = table_widths(width, plan, fm, stages_w)
     t = Table(box=None, show_header=True, header_style=f"bold {C.FAINT}", pad_edge=False, expand=False)
     t.add_column("item", style=C.TEXT, no_wrap=True, width=item_w, overflow="ellipsis")
-    t.add_column(header, no_wrap=True, width=stages_w or stages_width(plan, fm), justify="center", overflow="ellipsis")
+    t.add_column(header, no_wrap=True, width=stages_w, justify="center", overflow="ellipsis")
     t.add_column("stage", no_wrap=True, style=C.MUTED, width=STAGE_W, overflow="ellipsis")
     t.add_column("progress", no_wrap=True, width=bar_w + 5)
     t.add_column("eta", no_wrap=True, justify="right", style=C.MUTED, width=WHEN_W)

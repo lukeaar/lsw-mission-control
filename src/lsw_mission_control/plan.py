@@ -191,7 +191,10 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
             raise ValueError(f"{name!r} waits on a live job: its first stage is the job's, so it needs one")
         other.append(OtherItem(name, stages, bool(o.get("paused")), after, after_server))
     nxt = _planned_release(d["next"], "next") if d.get("next") else None
-    later = tuple(_planned_release(r, f"later[{i}]") for i, r in enumerate(_list(d.get("later") or [], "later")))
+    # Absent or null: none. Anything else but a list ({}, "", 0, false) is a typo the dashboard must not
+    # read as "no later releases" in silence.
+    later_raw = [] if d.get("later") is None else _list(d["later"], "later")
+    later = tuple(_planned_release(r, f"later[{i}]") for i, r in enumerate(later_raw))
     release = str(d["release"])
     by_hand = None
     if d.get("final_merge_by_hand") is not None:

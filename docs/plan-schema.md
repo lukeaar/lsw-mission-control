@@ -75,7 +75,10 @@ item is common), so the plan can carry its own explanations.
   at work, no job of it running), `hold ended` with `not resumed` where its finish would be (the
   header counts `N not resumed`). It keeps the time left it had while held, as if it resumed now,
   and its agents are back in Agents at work. A row that waits on other work, or on your go-ahead,
-  reads that wait instead.
+  reads that wait instead. Only work from that time on counts: an item resumed early whose stage
+  then finished before the hold's end reads `hold ended` until its next stage starts (the plan
+  keeps no start for a hold, so that cannot be told from a stage finished before it). Take the
+  hold out of the plan when you resume an item early.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 
@@ -92,12 +95,15 @@ item is common), so the plan can carry its own explanations.
 
 Planned, not scheduled: no finish time until work on an item starts. Items are grouped by
 `group` (in order). A stage named `your …` with a null spec is the owner's ("wait on you").
-`after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below).
-`build`/`review`/`fix` become stages only when their minutes are above 0.
+`after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below); the key is
+an item of the same release (one of another release's items is ignored).
+`build`/`review`/`fix` become stages only when their minutes are above 0. A planned item has no
+hold: `paused` is read on `items` and `other` only, and `paused_until` on `items`.
 
 ### `later`: `[{release, about, items}, …]`
 
-The releases after the next one, in the order they ship, each shaped like `next` (its items too).
+The releases after the next one, in the order they ship, each shaped like `next` (its items too):
+a list, even of one (absent or `null`: none; anything else is refused).
 Each is its own panel, right after the next release's (titled by `[release] later_title`,
 `Later release 1.6.0`); one with no items has none. An item not yet begun waits on the release
 before its own: its stage reads `after 1.5.0` (`[release] later_wait`, which may say

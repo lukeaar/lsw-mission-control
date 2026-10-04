@@ -37,7 +37,7 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[release] tag_prefix` | str | `"v"` | the tag is `<prefix><release>` |
 | `[release] title` | str | `"Release {release}"` | the panel's title |
 | `[release] next_title` | str | `"Next release {release}"` | |
-| `[release] later_title` | str | `"Later release {release}"` | each release after the next (the plan's `later`), drawn right after the next release wherever `next` sits in `[layout] panels` |
+| `[release] later_title` | str | `"Later release {release}"` | each release after the next (the plan's `later`), drawn right after the next release wherever `next` sits in `[layout] panels` (a list without `next` draws neither) |
 | `[release] later_wait` | str | `"after {release}"` | the stage of a later release's item not yet begun; `{release}` is the release before it (`"{release} installed"`) |
 | `[release] tag_row` | str | `"Tag {release}"` | the last row's name |
 | `[release] tag_todo_text` | str | `"CI, tag, release"` | the last row's stages before it starts |

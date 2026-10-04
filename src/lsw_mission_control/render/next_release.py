@@ -9,7 +9,7 @@ from rich.console import Group
 from rich.text import Text
 
 from lsw_mission_control.progress import Prog, in_wait_order, short_name, stages_progress
-from lsw_mission_control.render.widgets import pack, panel, work_row, work_table
+from lsw_mission_control.render.widgets import STAGES_MIN, pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import now
 
@@ -40,12 +40,12 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
     begun wait on (None for the next release: its items wait on nothing but each other)."""
     labels, rc = f.labels, f.cfg.release
     t_now = now()
-    # Planned items can have many stages: a column of their own keeps them from widening every
-    # other panel's stage column and squeezing the names out, one width for every planned release
-    # so that their panels line up.
-    planned = [i for rel in (f.plan.next, *f.plan.later) if rel for i in rel.items]
-    most = max((len(i.stages) for i in planned), default=3)
-    t, bar_w = work_table("stages", width, f.plan, rc.final_merge, stages_w=max(16, 2 * most - 1))
+    # Planned items can have many stages: each planned release's panel sizes a stage column of its
+    # own by its own items, so they never widen another panel's and squeeze its names out (a later
+    # release's long item must not change the next release's panel). The panels line up whenever
+    # their items have at most 8 stages (STAGES_MIN).
+    most = max((len(i.stages) for i in nxt.items), default=3)
+    t, bar_w = work_table("stages", width, f.plan, rc.final_merge, stages_w=max(STAGES_MIN, 2 * most - 1))
     live = done = waiting_owner = 0
     group = None
     # Each item after the items it runs after (one listed before them still waits for them). An

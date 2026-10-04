@@ -5,8 +5,11 @@ panel, its first stage naming this release's install."""
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
+
+import pytest
 
 from lsw_mission_control import testing
 from lsw_mission_control.agents import FinishedStore, label_names
@@ -14,7 +17,8 @@ from lsw_mission_control.config import FinalMergeCfg
 from lsw_mission_control.plan import parse_plan
 from lsw_mission_control.render.next_release import later_panel, next_panel
 
-from scenarios import Project, later_releases
+from conftest import NOW
+from scenarios import HOUR, MIN, Project, later_releases
 
 LATER_17 = {"release": "1.7.0", "items": [
     {"key": "sso", "name": "Single sign-on", "group": "first", "build": 120, "review": 30},
@@ -40,6 +44,18 @@ def with_two_later(p: Project) -> None:
 
 def later_text(p: Project, i: int = 0, width: int = 150) -> str:
     return testing.render_text(later_panel(p.engine().build_frame(width), width, i), width)[0]
+
+
+def next_text(p: Project, width: int = 150) -> str:
+    return testing.render_text(next_panel(p.engine().build_frame(width), width), width)[0]
+
+
+def load(p: Project) -> dict:
+    return json.loads((p.dot / "status_plan.json").read_text())
+
+
+LONG = {"key": "long", "name": "Long one", "before": [[f"step {i}", None, 0] for i in range(12)],
+        "build": 10, "review": 10, "fix": 10}  # 15 stages: 29 cells of dots
 
 
 def test_each_later_release_is_its_own_panel_right_after_the_next(tmp_path):
@@ -208,3 +224,93 @@ def test_a_begun_later_items_agent_is_at_work(tmp_path):
     later_releases(p)
     plain = testing.render_text(agents_panel(p.engine().build_frame(120), 120, []), 120)[0]
     assert "design:search" in plain and "Search across workspaces" in row(plain, "design:search")
+
+
+@pytest.mark.parametrize("width", (80, 100))
+def test_a_later_releases_long_item_leaves_the_next_panel_as_it_was(tmp_path, width):
+    """Each planned panel sizes its stage column by its own items. With one width for every planned
+    release, a 15-stage item added to 1.6.0 set the 1.5.0 panel's stage column too: at 100 columns
+    "Pick the sync e…" read "Pick the syn…"; at 80 every name was gone and the finish time cut to
+    "~25m ·"."""
+    p = Project(tmp_path)
+    later_releases(p)
+    plain = next_text(p, width)
+    assert row(plain, "Pick ") and "~25m · 14:38" in plain
+    plan = load(p)
+    plan["later"][0]["items"].append(LONG)
+    p.plan(plan)
+    assert next_text(p, width) == plain
+
+
+@pytest.mark.parametrize("width", (80, 100))
+@pytest.mark.parametrize("where", ("next", "later"))
+def test_a_long_item_keeps_every_name_and_finish_time_in_its_own_panel(tmp_path, where, width):
+    """A 15-stage item in its own panel: at 80 columns its dots are cut ("…") so that every name keeps
+    6 cells and every finish time is whole (its 29 cells of dots left the names a column of -7, which
+    ran each row past the panel's edge); at 100 they fit whole."""
+    p = Project(tmp_path)
+    later_releases(p)
+    plan = load(p)
+    rel = plan["next"] if where == "next" else plan["later"][0]
+    rel["items"].append(LONG)
+    p.plan(plan)
+    plain = next_text(p, width) if where == "next" else later_text(p, 0, width)
+    for it in rel["items"]:
+        assert row(plain, it["name"][:5]), it["name"]
+    assert ("~25m · 14:38" if where == "next" else "~2h50 · 17:03") in plain
+    dots = "─".join("○" * 15)
+    assert (dots in row(plain, "Long")) is (width == 100)
+    assert width == 100 or "○─○─○─○─○─○─○─○…" in row(plain, "Long")
+
+
+def test_an_after_naming_another_releases_item_is_ignored(tmp_path):
+    """`after:<key>` names an item of the same release; one of another release's is ignored
+    (plan-schema.md), so search (1.6.0, begun early) reads its own stage and time with `after:sync`
+    (1.5.0, not begun) as without it. A wait across releases would need every planned panel's waits
+    worked out together, and a plan may already carry such keys: its own change, not this one."""
+    p = Project(tmp_path)
+    later_releases(p)
+    before = row(later_text(p), "Search across workspaces")
+    plan = load(p)
+    for it in plan["later"][0]["items"]:
+        if it["key"] == "search":
+            it["flags"] = ["after:sync"]
+    p.plan(plan)
+    assert row(later_text(p), "Search across workspaces") == before and "~2h50 · 17:03" in before
+
+
+def test_a_planned_item_has_no_hold(tmp_path):
+    """`paused` and `paused_until` are read on release items (and `paused` on other work) only: on a
+    later item, as on a next one, they change nothing (plan-schema.md). search began early and its
+    run stopped 2 h ago, so it reads as any stopped planned item does, held or not. A hold on a
+    planned item (paused, its agents out of Agents at work, its end) would be its own change."""
+    p = Project(tmp_path)
+    later_releases(p)
+    p.runs.clear()
+    p.agent("build:icons", start_ago=15 * MIN, quiet_s=20)
+    p.agent("design:search", start_ago=3 * HOUR, quiet_s=2 * HOUR, run="wf_run-d")  # stopped: silent 2 h
+    before = row(later_text(p), "Search across workspaces")
+    plan = load(p)
+    for it in plan["later"][0]["items"]:
+        if it["key"] == "search":
+            it["paused"] = True
+            it["paused_until"] = dt.datetime.fromtimestamp(NOW + HOUR, tz=dt.timezone.utc).isoformat()
+    p.plan(plan)
+    assert row(later_text(p), "Search across workspaces") == before
+
+
+def test_a_label_a_later_item_shares_keeps_naming_the_nearer_one():
+    """A key typed again in a later release: Agents at work keeps naming the nearer release's item, or
+    the other work, the label belongs to (the later release was named last, and took it over)."""
+    plan = parse_plan({
+        "release": "1", "items": [{"key": "a", "name": "This release's A", "build": 10}],
+        "other": [{"name": "Other O", "stages": [["run", "run:o", 5]]}],
+        "next": {"release": "2", "items": [{"key": "n", "name": "Next N", "build": 5}]},
+        "later": [{"release": "3", "items": [{"key": "a", "name": "Later A", "build": 5},
+                                             {"key": "n", "name": "Later N", "build": 5},
+                                             {"key": "l", "name": "Later L", "before": [["run", "run:o", 5]],
+                                              "build": 5}]},
+                  {"release": "4", "items": [{"key": "l", "name": "Even later L", "build": 5}]}]})
+    names = label_names(plan, FinalMergeCfg())
+    assert (names["build:a"], names["build:n"], names["run:o"], names["build:l"]) == (
+        "This release's A", "Next N", "Other O", "Later L")

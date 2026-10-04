@@ -6,7 +6,9 @@ import pytest
 from rich.text import Text
 
 from lsw_mission_control import testing, util
-from lsw_mission_control.render.widgets import pack
+from lsw_mission_control.config import FinalMergeCfg
+from lsw_mission_control.plan import parse_plan
+from lsw_mission_control.render.widgets import ITEM_MIN, STAGES_MIN, fit_stages, pack, table_widths, work_table
 
 from conftest import NOW
 
@@ -84,3 +86,36 @@ def test_pack_wraps_only_between_phrases():
     assert pack(phrases, 40).plain == "aaaaaaaaaa  ·  bbbbbbbbbb  ·  cccccccccc"
     assert pack(phrases, 25).plain == "aaaaaaaaaa  ·  bbbbbbbbbb\ncccccccccc"
     assert pack(phrases, 12, indent=4).plain == "aaaaaaaaaa\n    bbbbbbbbbb\n    cccccccccc"
+
+
+WIDE = parse_plan({"release": "1", "items": [{"name": "Accessibility audit of the settings pages", "key": "a",
+                                              "build": 10}]})
+
+
+def test_a_stages_column_gives_way_to_the_names():
+    """Cut where it would leave the names under ITEM_MIN, never under STAGES_MIN, never widened."""
+    assert fit_stages(80, 29) == 16 and fit_stages(90, 29) == 26 and fit_stages(100, 29) == 29
+    assert fit_stages(60, 29) == STAGES_MIN and fit_stages(80, 16) == 16 and fit_stages(150, 10) == 10
+
+
+def test_the_names_column_has_a_floor():
+    """It went below nothing beside a wide stages column (-7 at 80 columns with 29), or on a narrow
+    dashboard (-14 at 60): the row ran past the panel's edge and its finish time was cut."""
+    fm = FinalMergeCfg()
+    assert table_widths(80, WIDE, fm, 29) == (1, 8) and table_widths(60, WIDE, fm)[0] == 1
+    assert table_widths(80, WIDE, fm, 16) == (ITEM_MIN, 8)  # as before: 80 columns leave the names 6
+
+
+@pytest.mark.parametrize("width", range(60, 161, 5))
+@pytest.mark.parametrize("stages", (16, 17, 27, 29, 45, 61))
+def test_a_work_table_fits_its_width_exactly(width, stages):
+    """Whatever its stages, the five columns, their four gaps (8) and the panel's border and padding
+    (4) fill the width exactly from 75 columns up (a bar of 8 or more), the names keeping ITEM_MIN
+    or more from 80 up. Narrower than 75 the names keep one cell, and rich shares the rest of the cut."""
+    t, bar_w = work_table("stages", width, WIDE, FinalMergeCfg(), stages_w=stages)
+    item_w, stages_w, *_ = [c.width for c in t.columns]
+    assert STAGES_MIN <= stages_w <= stages and bar_w >= 8 and item_w >= 1
+    if width >= 75:
+        assert sum(c.width for c in t.columns) + 8 + 4 == width
+    if width >= 80:
+        assert item_w >= ITEM_MIN

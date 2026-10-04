@@ -476,7 +476,13 @@ def test_init_validate_doctor(tmp_path, capsys):
     with pytest.raises(SystemExit) as e:
         cli.main(["validate", "--project", str(proj)])
     out = capsys.readouterr().out
-    assert e.value.code == 0 and "ok    plan: status_plan.json: release 0.1.0" in out
+    assert e.value.code == 0 and "ok    plan: status_plan.json: release 0.1.0" in out and "next no, later no" in out
+    plan = json.loads((dot / "status_plan.json").read_text())
+    plan["later"] = [{"release": "0.3.0", "items": []}, {"release": "0.4.0", "items": []}]
+    (dot / "status_plan.json").write_text(json.dumps(plan))
+    with pytest.raises(SystemExit) as e:
+        cli.main(["validate", "--project", str(proj)])
+    assert e.value.code == 0 and "later 0.3.0 0.4.0" in capsys.readouterr().out  # read, not a misspelt key
     (dot / "status_plan.json").write_text("{}")
     (dot / "status_notes.json").write_text('{"waiting_on_owner": [],}')
     with pytest.raises(SystemExit) as e:

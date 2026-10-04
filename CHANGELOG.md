@@ -29,7 +29,11 @@ never on this one, an owner's first stage included. A release two out used to go
 the bottom of the next release's panel, where its first stage, a null stage typed by hand, named
 the wrong release's install. A plan with one `next` draws as before (but for `1 item planned`, which
 read `1 items planned`); when a release ships, `next` becomes `items` and the first of `later`
-becomes `next`.
+becomes `next`. Each panel sizes its stage column by its own items, as the next release's always
+did, so a later release never changes the panels before it. `later` is a list (absent or `null`:
+none; `{}` or any other value is refused), `lsw-mc validate` names the later releases it read
+(`later 1.6.0 1.7.0`, or `later no`), and a label that a later item shares with a nearer release's
+item or with other work keeps naming that one in Agents at work.
 
 The network indicator has a third state, **NOT CONNECTED** (an amber chip, ` ⊘ NOT CONNECTED `,
 with why: `no network`, `captive portal`, `no answer in 2s`, ...): this computer has no working
@@ -195,9 +199,19 @@ Fixed before the first release:
   stage, or `hold ended` with `not resumed` (the header counts `N not resumed`) while nothing of it
   has run since: no agent of it active since that time or still at work, no job of it running. It
   keeps the time left it had while held, and its agents are back in Agents at work.
+- A row of many stages no longer pushes the names and the finish times out of its table. Its stages
+  column took the room it needed and the names got what was left, down to nothing and below, which
+  ran every row past the panel's edge and cut its finish time short (`~25m ·`): at 80 columns a
+  15-stage row of Other work did that to the Release and Other panels, and a 15-stage next-release
+  item to its own panel. Now a stages column too wide to leave the names 6 cells is cut, its dots
+  ending in `…` (the stage column beside them still names the running stage), but never below 16.
+  Under 80 columns, where the names get what is left, they keep at least one cell, so a row no
+  longer runs past the edge (at 70 columns a finish time read `~10m · 14`, now `~10m · 14:23`).
 
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
-`[[plugins]]` name; `validate_options` names the type it expected. A plugin loaded by module name
+`[[plugins]]` name; `validate_options` names the type it expected; `render.widgets.fit_stages`,
+`STAGES_MIN` and `ITEM_MIN` (`work_table` draws its stages column at `fit_stages()`, and
+`table_widths` never gives the names less than one cell). A plugin loaded by module name
 is watched for reloads like one loaded by file. The live view reloads only for files that can be
 modules (an editor's `.#x.py` lock or a sync tool's `x (1).py` copy used to fail the gate). The
 launcher's first-run notice goes to stderr; a status-line shim that cannot find the engine says so
