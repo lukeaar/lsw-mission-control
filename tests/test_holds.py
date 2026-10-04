@@ -168,6 +168,33 @@ def test_work_at_the_hold_end_itself_has_resumed_it(tmp_path, silent, ended):
     assert ("hold ended" in row(release_text(p), "Accessibility audit")) is ended
 
 
+@pytest.mark.parametrize("relaunched", ("build:export", "review:export", "fix:export"))
+@pytest.mark.parametrize("died_ago, resumed", ((15 * MIN, True), (40 * MIN, False)))
+def test_an_attempt_that_died_after_the_hold_ended_has_resumed_it(tmp_path, relaunched, died_ago, resumed):
+    """export's fix was stopped 2 h ago and held until 30 min ago. A run then started one of its
+    stages again, and that attempt died: after the hold ended, the item was resumed, so it reads its
+    real stage (its fix, whose own attempt died with no result, needs a re-run), never "hold ended".
+    Where that stage had returned before (build, review), its label reads the result and the attempt
+    that died rides along (latest_by_label): it still counts as the run it was. An attempt that died
+    before the hold ended resumed nothing."""
+    p = Project(tmp_path)
+    midway(p)
+    hold(p, export=-30 * MIN)
+    p.runs.clear()
+    p.agent("design:export", status="done", start_ago=6 * HOUR, quiet_s=5.5 * HOUR)
+    p.agent("build:export", status="done", start_ago=5 * HOUR, quiet_s=4 * HOUR)
+    p.agent("review:export", status="done", start_ago=3.9 * HOUR, quiet_s=3.5 * HOUR)
+    p.agent("fix:export", status="failed", start_ago=3 * HOUR, quiet_s=2 * HOUR)
+    p.agent(relaunched, status="failed", start_ago=died_ago + 10 * MIN, quiet_s=died_ago, run="wf_run-z")
+    plain = release_text(p)
+    export = row(plain, "Export to CSV")
+    if resumed:
+        assert "●─●─●─●─✕" in export and "fix failed" in export and eta(export) == "needs rerun"
+        assert "hold ended" not in plain and "not resumed" not in plain
+    else:
+        assert "hold ended" in export and eta(export) == "not resumed" and "1 not resumed" in plain
+
+
 @pytest.mark.parametrize("width", (80, 120))
 def test_holds_golden(tmp_path, update_golden, width):
     """Every kind of hold in one release panel: a11y's ended with nothing resumed, export's ended

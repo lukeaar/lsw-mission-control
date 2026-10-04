@@ -122,7 +122,10 @@ Fixed before the first release:
   failed, "needs rerun" with its whole time again, only when none of them runs and one failed, as
   before. The release's finish and the calibration follow: a stage that returned before its retry
   died is done, in the time it took. A held row that follows a plugin's live job (`after_server`)
-  reads its later stages as held, as every other held row does; a stage of it that died read ✕.
+  reads its later stages as held, as every other held row does; a stage of it that died read ✕. A
+  hold that has ended counts an attempt that died since as work resumed, as it did when the label
+  read that attempt: a run that started a returned stage again after the hold and died reads the
+  item's real stage, never `hold ended` · `not resumed`.
 
 - A detached job's stage (`{"progress", "total"}`) runs from the moment its progress file exists,
   even empty: it read "queued 0%" until its first unit finished, hours into a long job. It reads

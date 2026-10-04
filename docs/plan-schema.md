@@ -71,14 +71,14 @@ item is common), so the plan can carry its own explanations.
   "from <when>", and its time left includes the hold, so what runs after it, and the release's
   finish, move past the hold.
   Once that time has passed the hold is over, whatever `paused` says beside it: the row reads its
-  real stage, or, while nothing of it has run since (no agent of it active since that time or still
-  at work, no job of it running), `hold ended` with `not resumed` where its finish would be (the
-  header counts `N not resumed`). It keeps the time left it had while held, as if it resumed now,
-  and its agents are back in Agents at work. A row that waits on other work, or on your go-ahead,
-  reads that wait instead. Only work from that time on counts: an item resumed early whose stage
-  then finished before the hold's end reads `hold ended` until its next stage starts (the plan
-  keeps no start for a hold, so that cannot be told from a stage finished before it). Take the
-  hold out of the plan when you resume an item early.
+  real stage, or, while nothing of it has run since (no agent of it active since that time, even one
+  that then died, or still at work, no job of it running), `hold ended` with `not resumed` where its
+  finish would be (the header counts `N not resumed`). It keeps the time left it had while held, as
+  if it resumed now, and its agents are back in Agents at work. A row that waits on other work, or
+  on your go-ahead, reads that wait instead. Only work from that time on counts: an item resumed
+  early whose stage then finished before the hold's end reads `hold ended` until its next stage
+  starts (the plan keeps no start for a hold, so that cannot be told from a stage finished before
+  it). Take the hold out of the plan when you resume an item early.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 

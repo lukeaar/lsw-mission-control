@@ -448,7 +448,8 @@ def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Cali
 def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> bool:
     """Any of the item's work has run since `since`, or runs now: an agent of it was active at or
     after that time, or has not gone silent (a long tool call writes nothing), or a detached job of
-    it is running or finished a unit since."""
+    it is running or finished a unit since. An attempt that died counts as the run it was: where a
+    label reads the result before it (latest_by_label), the one that died rides along (died_after)."""
     for _name, spec, _m in item_stages(plan, item):
         if isinstance(spec, dict):
             job = job_file(spec["progress"])
@@ -458,6 +459,9 @@ def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> boo
         for label in spec if isinstance(spec, list) else [spec] if spec else []:
             a = labels.get(label)
             if a and (a["status"] == "running" or max(a["t0"] or 0.0, a["t1"] or 0.0) >= since):
+                return True
+            died = died_after(a) if a else None
+            if died is not None and max(died.get("t0") or 0.0, died.get("t1") or 0.0) >= since:
                 return True
     return False
 
