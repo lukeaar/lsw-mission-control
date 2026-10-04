@@ -101,9 +101,10 @@ freezes the clock.
   time left, and a finish time. ETAs are each stage's planned minutes, calibrated against how long
   this release's finished stages really took, minus the time already run. A held item reads
   `paused`; once a hold with an end is over it reads its stage again, or `hold ended` while nothing
-  has resumed it. Then the final merge and the tag row (CI on the remote main, the tag, the release
-  workflow run, from GitHub).
-- **Next release** (optional): planned items, grouped, with no finish time until work starts.
+  has resumed it. The finished items are one row below the rest, `● N finished`. Then the final
+  merge and the tag row (CI on the remote main, the tag, the release workflow run, from GitHub).
+- **Next release** (optional): planned items, grouped, with no finish time until work starts; the
+  finished ones are one row below the rest (`● N finished`), as in the release panel.
   Then each **later release** (optional, the plan's `later`), in order, a panel of its own: an
   item not yet begun waits on the release before its own (`after 1.5.0`).
 - **Other work in progress**: everything the release does not wait for, including rows that wait

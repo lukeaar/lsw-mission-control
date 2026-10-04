@@ -1,5 +1,6 @@
 """The releases after this one, each its own panel: the next release, then each later one (the
-plan's `later`), with their planned items, grouped, with their stages and state."""
+plan's `later`), with their planned items, grouped, with their stages and state, and the finished
+ones as one row below the rest, as the release panel draws its own."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ from rich.console import Group
 from rich.text import Text
 
 from lsw_mission_control.progress import Prog, in_wait_order, short_name, stages_progress
-from lsw_mission_control.render.widgets import STAGES_MIN, pack, panel, work_row, work_table
+from lsw_mission_control.render.widgets import STAGES_MIN, finished_row, pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import now
 
@@ -47,7 +48,7 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
     most = max((len(i.stages) for i in nxt.items), default=3)
     t, bar_w = work_table("stages", width, f.plan, rc.final_merge, stages_w=max(STAGES_MIN, 2 * most - 1))
     live = done = waiting_owner = 0
-    group = None
+    group, headed = None, False
     # Each item after the items it runs after (one listed before them still waits for them). An
     # item not started has no finish time (planned, not scheduled); one begun never finishes before
     # the work it runs after, and has no finish time while that work has none.
@@ -83,15 +84,19 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
 
     progs = in_wait_order(len(nxt.items), targets_of, compute)
     for i, item in enumerate(nxt.items):
+        p, started, wait = progs[i], begun[i], waits[i]
+        if p.current == "done":
+            # Every finished item is one row below the rest, as the release's are; a group's heading
+            # shows only over rows still drawn.
+            done += 1
+            continue
         if item.group != group:
             group = item.group
             if group:
                 t.add_row(Text(group, style=C.FAINT), "", "", "", "")
-        p, started, wait = progs[i], begun[i], waits[i]
+                headed = True
         blocking = wait is not None
-        if p.current == "done":
-            done += 1
-        elif owner_at[i] is not None:
+        if owner_at[i] is not None:
             p.current, p.waiting = item.stages[owner_at[i]][0], True
             waiting_owner += 1
         elif not started:
@@ -116,6 +121,12 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
         else:
             live += 1
         work_row(t, item.name, p, bar_w)
+    if done:
+        if headed:
+            # Right under the last group's rows it would read as that group's own: a blank row sets it
+            # apart (without headings it follows the rows, as the release panel's does).
+            t.add_row("", "", "", "", "")
+        finished_row(t, done)
     n = len(nxt.items)
     phrases = [Text(f"{n} item{'' if n == 1 else 's'} planned", style=C.ACCENT_SOFT)]
     if live:

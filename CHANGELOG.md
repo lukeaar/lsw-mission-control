@@ -83,6 +83,15 @@ Fixed before the first release:
 - A paused row's bar fills with its work done in muted grey. It was filled in the empty part's own
   colour, so a held row at 71% drew an empty bar beside its "71%".
 
+- The next release's and each later release's finished items are one row, `● N finished` with its
+  ✓, below the rest, as the release panel draws its own. Each was a row of its own (`done`, a full
+  bar, ✓) under its group, however many there were: a release with much of its work begun early
+  listed every finished item, while its header already counted them (`N done`). Where the panel
+  draws group headings, a blank row sets the finished row apart, which right under the last group's
+  rows would read as that group's own. A group whose items have all finished has no heading; the
+  header counts as before, and the columns are sized as before, by every item, finished or not, so
+  an item that finishes changes no other row's columns.
+
 - A journal line whose result holds U+2028, U+2029 or U+0085 is read whole. The journal was split
   with `str.splitlines()`, which splits at those characters too, so the line with an agent's
   result was lost, and the finished agent read as running, then failed ("needs rerun"). A journal

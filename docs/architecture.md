@@ -322,8 +322,10 @@ Panels:
   until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
   resumed` while nothing of the item has run since).
 - Next release, then each later release (`later`) in order, each sizing its stage column by its own
-  items (a later release never changes the panels before it): an item not yet begun waits on the
-  release before (`[release] later_wait`), never this one.
+  items, finished ones included (a later release never changes the panels before it): an item not
+  yet begun waits on the release before (`[release] later_wait`), never this one; the unfinished
+  rows under their groups (a heading only over rows drawn), then `● N finished` as the release's
+  (after a blank row when a heading was drawn, so it never reads as the last group's own).
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
   live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
   head and `also in motion`.

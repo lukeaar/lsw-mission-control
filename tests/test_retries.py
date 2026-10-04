@@ -592,10 +592,11 @@ def test_next_rows_after_the_outage(tmp_path):
     again.start("fix-n2", NOW - 20 * MIN, NOW - 30, label="fix:icons", key="fn")
     again.write()
     plain = next_text(p)
-    index, icons, bench = row_of(plain, "Search index"), row_of(plain, "New icon set"), row_of(plain, "Benchmarks")
-    assert "●─●─●" in index and "done" in index and "needs rerun" not in index
+    icons, bench = row_of(plain, "New icon set"), row_of(plain, "Benchmarks")
+    # Search index is done: the panel's one finished item, with no row of its own
+    assert "Search index" not in plain and "● 1 finished" in plain and "1 done" in plain
     assert "●─●─◉" in icons and "fix" in icons and "needs rerun" not in icons and "~10m · 14:23" in icons
-    assert "✕─○" in bench and "needs rerun" in bench
+    assert "✕─○" in bench and "needs rerun" in bench and plain.count("needs rerun") == 1
 
 
 # ── a died attempt after an earlier stage ran again; a held item's stopped re-run; a running stage's time ──

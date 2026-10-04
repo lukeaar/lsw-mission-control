@@ -95,7 +95,10 @@ item is common), so the plan can carry its own explanations.
 ### `next`: `{release, about, items: [{key, name, group, before, build, review, fix, flags}]}`
 
 Planned, not scheduled: no finish time until work on an item starts. Items are grouped by
-`group` (in order). A stage named `your …` with a null spec is the owner's ("wait on you").
+`group` (in order); the finished ones are counted (`N done`) and drawn as one row below the rest,
+`● N finished`, as the release's are (after a blank row where group headings are drawn), so a
+group whose items have all finished has no heading.
+A stage named `your …` with a null spec is the owner's ("wait on you").
 `after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below); the key is
 an item of the same release (one of another release's items is ignored).
 `build`/`review`/`fix` become stages only when their minutes are above 0. A planned item has no
