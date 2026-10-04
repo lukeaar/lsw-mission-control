@@ -99,8 +99,10 @@ freezes the clock.
 - **Release**: each item's stages as dots (`●` done, `◉` running, `○` queued, `✕` failed, `–` a
   fix not needed), the running stage, a bar that fills as work is done and is coloured by the
   time left, and a finish time. ETAs are each stage's planned minutes, calibrated against how long
-  this release's finished stages really took, minus the time already run. Then the final merge and
-  the tag row (CI on the remote main, the tag, the release workflow run, from GitHub).
+  this release's finished stages really took, minus the time already run. A held item reads
+  `paused`; once a hold with an end is over it reads its stage again, or `hold ended` while nothing
+  has resumed it. Then the final merge and the tag row (CI on the remote main, the tag, the release
+  workflow run, from GitHub).
 - **Next release** (optional): planned items, grouped, with no finish time until work starts.
 - **Other work in progress**: everything the release does not wait for, including rows that wait
   on a plugin's live job.

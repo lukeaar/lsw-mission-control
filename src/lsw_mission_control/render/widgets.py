@@ -126,6 +126,13 @@ def work_row(t: Table, name: str, p: Prog, bar_w: int, release: bool = False, jo
         t.add_row(Text(name, style=C.MUTED), chips_of(p.marks, release, join), Text("done", style=C.GREEN),
                   bar(1.0, bar_w, C.GREEN) + Text(" 100%", style=C.GREEN), Text("✓", style=C.GREEN))
         return
+    if getattr(p, "hold_ended", None) is not None:
+        # The owner's hold is over and nothing has resumed the work: not held, not failed, and nothing
+        # runs, so it has no finish of its own. Its work done fills the bar in muted grey.
+        t.add_row(Text(name), chips_of(p.marks, release, join), Text("hold ended", style=C.AMBER),
+                  bar(p.fraction, bar_w, C.MUTED) + Text(f" {p.fraction * 100:3.0f}%", style=C.MUTED),
+                  Text("not resumed", style=C.AMBER))
+        return
     if p.paused:
         resume = getattr(p, "resume", None)
         # A held row has no time left to colour its bar: the work done fills it in muted grey (the

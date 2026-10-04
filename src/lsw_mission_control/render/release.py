@@ -10,6 +10,7 @@ from rich.text import Text
 from lsw_mission_control.progress import (
     Prog,
     in_wait_order,
+    item_active_since,
     item_minutes,
     item_progress,
     item_started,
@@ -99,11 +100,15 @@ def release_panel(f: Frame, width: int):
         it = items[i]
         # Until the work it runs after is done, begun or not, it never finishes before that work.
         after = "" if wait is None else "all" if i >= last else short_name(items[wait[1]].key, plan.items)
+        # Held now (the plan is read once: a hold with an end ends on the clock), or held until a time
+        # that has passed with nothing of it run since: its work is still stopped as it was held.
+        held = it.held(t_now)
+        stopped = held or (it.hold_ended(t_now) and not item_active_since(plan, it, labels, it.paused_until))
         p = item_progress(plan, it, labels, now=t_now, cal=cal, default_fix_share=rc.fix_share,
-                          wait_before=0.0 if wait is None else wait[0], after=after)
+                          wait_before=0.0 if wait is None else wait[0], after=after, paused=stopped)
         if i >= last and "owner_ok" in it.flags and not item_started(plan, it.key, labels):
             p.current, p.waiting = "your go-ahead", True
-        if it.paused and p.current != "done":
+        if held and p.current != "done":
             # Held by the owner: its stopped agent is not a failure and it is not queued. It keeps its
             # time left, so the release's finish and what runs after it still count it.
             p.current, p.failed, p.paused = "paused", False, True
@@ -111,6 +116,11 @@ def release_panel(f: Frame, width: int):
                 # The hold itself takes time: nothing of it runs before the hold ends.
                 p.remaining = max(0.0, it.paused_until - t_now) + (p.remaining or 0.0)
                 p.resume = it.paused_until
+        elif stopped and p.current != "done" and not (p.waiting and (p.waits or p.current == "your go-ahead")):
+            # The hold is over and nothing has resumed the work (a row that waits on other work, or on
+            # the owner, reads that wait instead): neither paused, nor failed, nor queued. It keeps the
+            # time left it had while held, as if it resumed now, so what runs after it counts it.
+            p.current, p.failed, p.hold_ended = "hold ended", False, it.paused_until
         return p
 
     # A failed item's time is its re-run's (the release's finish counts it), so what runs after it waits that long.
@@ -169,6 +179,7 @@ def release_panel(f: Frame, width: int):
     nfailed = sum(p.failed for _n, p in rows) + (merge["status"] == "failed") + (tag["status"] == "failed")
     nover = sum(p.over > 0 and not p.failed and not p.paused for _n, p in rows)
     npaused = sum(p.paused for _n, p in rows)
+    nended = sum(p.hold_ended is not None for _n, p in rows)
     first = bar(overall, METER_W, C.GREEN if released else eta_colour(release_at - t_now))
     pct = 100 if released else min(99, int(overall * 100))  # never "100%" before it is out
     words = rc.words
@@ -180,6 +191,8 @@ def release_panel(f: Frame, width: int):
         phrases.append(Text(f"{nover} overrun", style=C.AMBER))
     if npaused:
         phrases.append(Text(f"{npaused} paused", style=C.AMBER))
+    if nended:
+        phrases.append(Text(f"{nended} not resumed", style=C.AMBER))
     if released:
         phrases.append(Text.assemble((f"{words['released']} ", C.GREEN), (clock(release_at), f"bold {C.GREEN}")))
     else:

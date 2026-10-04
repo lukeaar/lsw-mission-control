@@ -26,7 +26,8 @@ HAND, in the same turn as the change:
   or the dashboard cannot track them. The release's final merge uses the key `<final-merge key>`;
   move the plan's `release` on once a release ships, before the next final merge starts (only a
   final merge begun after the dashboard sees the change counts for the new release). A stopped
-  workflow's `other` entry gets `"paused": true` until it is resumed.
+  workflow's `other` entry gets `"paused": true` until it is resumed; a release item held until a
+  time gets `"paused_until"`, and its hold ends by itself at that time.
 - **The network indicator (bottom right) must always be right.** Before starting any
   network-dependent operation of a kind it does not recognise, add that kind FIRST: to the engine's
   `src/lsw_mission_control/net.py` (`NET_TOOLS` / `NET_SUBCOMMANDS`, plus a real ps line in

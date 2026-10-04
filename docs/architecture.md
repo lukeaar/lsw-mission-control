@@ -27,8 +27,8 @@ lsw-mission-control/
                           store_since, FinishedStore, journal_seq, later_attempt, latest_attempts,
                           latest_by_label, review_needs_fix
     progress.py           Prog, Calibration, calibrate, JobFile, created_at, job_file, progress_of, stage_begun,
-                          eta_from_json, stages_progress, stages_started, wait_for, in_wait_order, item_progress,
-                          item_started, item_minutes, short_name
+                          eta_from_json, stages_progress, stages_started, wait_for, in_wait_order, item_stages,
+                          item_progress, item_active_since, item_started, item_minutes, short_name
     net.py                NetRules, net_label, NET_CASES, FLAG_CASES, NetState, is_dashboard, etime_seconds,
                           network_critical, fit_list, network_flag, flag_verdict, check_net_cases
     connectivity.py       the internet check's pure parts: Online, Conn, classify, soft, connection, drawn,
@@ -80,7 +80,9 @@ Theme(bg, surface, border, text, muted, faint, accent, accent_soft, green, amber
 C.GREEN …                                             # the palette in use; theme.use(theme) at start-up
 Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, gh_timing, tokens, tokens_by_model,
                                                       # online (connectivity.Online)
-Plan(release, items, other, next, plugin_data, pre); Item(name, key, build, review, fix, flags, before, paused, paused_until)
+Plan(release, items, other, next, plugin_data, pre); .before(key)
+Item(name, key, build, review, fix, flags, before, paused, paused_until); .held(at) .hold_ended(at)   # a hold
+                                                      # with an end ends on the clock, not at the plan's next read
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags)
 PlanLoader(path, plugins).refresh() -> Plan           # mtime-gated; a bad parse keeps the last good plan; .note
 Notes(waiting_on_owner, in_progress_elsewhere, mtime); NotesLoader(path).refresh() -> Notes
@@ -305,7 +307,9 @@ Panels:
   journal order within a run, a bare label from the run whose attempts began last; every attempt
   kept, one whose key starts again is over, an end event ends the agentId it names; a journal is
   split at `\n` only); the tag row's phases and timing (the median of successful runs, else
-  `[release] fallback_minutes`); milestone wording.
+  `[release] fallback_minutes`); milestone wording; held items (`paused`, and `paused_until` held
+  until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
+  resumed` while nothing of the item has run since).
 - Next release.
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
   live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
@@ -330,8 +334,8 @@ Panels:
 ## 9. Tests
 
 `tests/test_*.py` cover each module; `tests/golden/` holds whole frames at 80/100/120/150 columns
-(plain and styled), the tag row's phases, the usage states, the `after_server` states, the bottom
-row (its `conn-*` files: every connection state), a broken plan and notes, the frame-error panel
-and logo frames. All their data is synthetic
+(plain and styled), the tag row's phases, held and ended holds (`hold-ended`), the usage states,
+the `after_server` states, the bottom row (its `conn-*` files: every connection state), a broken
+plan and notes, the frame-error panel and logo frames. All their data is synthetic
 (`tests/scenarios.py` and a stub plugin), generated at fixed offsets from a frozen clock.
 `pytest --update-golden` rewrites the goldens; every changed line is reviewed before a commit.

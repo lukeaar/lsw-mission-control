@@ -26,14 +26,15 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
     t_now = now()
     # An agent silent this long belongs to a run that was cut off (session limit, restart).
     running = [a for a in agents if a["status"] == "running" and a["t1"] and t_now - a["t1"] < silent_s]
-    # A paused item's workflow was stopped: its last agent is not at work, whatever its journal says.
+    # A paused item's workflow was stopped: its last agent is not at work, whatever its journal says
+    # (a release item only while its hold lasts: one that has ended holds nothing).
     paused = set()
     for item in f.plan.other:
         if item.paused:
             for _name, spec, _mins in item.stages:
                 paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))
     for item in f.plan.items:
-        if item.paused and item.key is not None:
+        if item.held(t_now) and item.key is not None:
             paused.update(f"{kind}:{item.key}" for kind in ("build", "review", "fix"))
             for _name, spec, _mins in f.plan.before(item.key):
                 paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))

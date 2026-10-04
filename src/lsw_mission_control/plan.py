@@ -30,8 +30,18 @@ class Item:
     fix: int
     flags: tuple[str, ...] = ()
     before: tuple[Stage, ...] = ()
-    paused: bool = False  # held by the owner: its unfinished stages read "paused", never failed or queued
+    paused: bool = False  # the plan holds it ("paused", or "paused_until"): held() says whether it still does
     paused_until: float | None = None  # when the hold ends (epoch s): its time left and what waits on it count it
+
+    def held(self, at: float) -> bool:
+        """Held by the owner at `at`: its unfinished stages read "paused", never failed or queued. A
+        hold with an end holds until then only, whatever "paused" says beside it: the plan is read
+        once, and the hold ends on the clock."""
+        return self.paused and (self.paused_until is None or at < self.paused_until)
+
+    def hold_ended(self, at: float) -> bool:
+        """Its `paused_until` has passed."""
+        return self.paused_until is not None and at >= self.paused_until
 
 
 @dataclass(frozen=True)

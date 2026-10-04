@@ -38,6 +38,7 @@ class Prog:
         self.alert = alert  # stuck: its stage shows in red
         self.paused = False  # held by the owner ("paused": true on an other item or a release item)
         self.resume = None  # when a held release item resumes ("paused_until"), if the plan says
+        self.hold_ended = None  # when a release item's hold ended, while nothing has resumed it
         self.waits = False  # it runs after work that is not done: a tie for "next to finish" goes to that work
 
 
@@ -403,17 +404,42 @@ def in_wait_order(n: int, targets_of: Callable[[int], Sequence[int]],
     return out
 
 
-def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Calibration, default_fix_share: float,
-                  wait_before: float | None = 0.0, after: str = "") -> Prog:
-    """A release item: its "before" stages (measure, design), then build → review → fix,
-    labelled build:<key> etc."""
+def item_stages(plan: Plan, item: Item) -> list:
+    """A release item's stages: its "before" stages (measure, design), then build → review → fix,
+    labelled build:<key> etc. ([] for an item with no key: it is done)."""
     key = item.key
     if key is None:
+        return []
+    return plan.before(key) + [("build", f"build:{key}", item.build), ("review", f"review:{key}", item.review),
+                               ("fix", f"fix:{key}", item.fix)]
+
+
+def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Calibration, default_fix_share: float,
+                  wait_before: float | None = 0.0, after: str = "", paused: bool | None = None) -> Prog:
+    """A release item: its "before" stages (measure, design), then build → review → fix,
+    labelled build:<key> etc. `paused`: its stages are held (stages_progress()); by default while
+    the owner holds it (Item.held)."""
+    if item.key is None:
         return Prog(0.0, "done", [("●", C.GREEN)] * 3, fraction=1.0)
-    return stages_progress(plan.before(key) + [
-        ("build", f"build:{key}", item.build), ("review", f"review:{key}", item.review),
-        ("fix", f"fix:{key}", item.fix)], labels, now=now, cal=cal, default_fix_share=default_fix_share,
-        wait_before=wait_before, after=after, paused=item.paused)
+    return stages_progress(item_stages(plan, item), labels, now=now, cal=cal, default_fix_share=default_fix_share,
+                           wait_before=wait_before, after=after, paused=item.held(now) if paused is None else paused)
+
+
+def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> bool:
+    """Any of the item's work has run since `since`, or runs now: an agent of it was active at or
+    after that time, or has not gone silent (a long tool call writes nothing), or a detached job of
+    it is running or finished a unit since."""
+    for _name, spec, _m in item_stages(plan, item):
+        if isinstance(spec, dict):
+            job = job_file(spec["progress"])
+            if job is not None and (job.units < int(spec["total"]) or (job.last or 0.0) >= since):
+                return True
+            continue
+        for label in spec if isinstance(spec, list) else [spec] if spec else []:
+            a = labels.get(label)
+            if a and (a["status"] == "running" or max(a["t0"] or 0.0, a["t1"] or 0.0) >= since):
+                return True
+    return False
 
 
 def item_started(plan: Plan, key: str | None, labels: dict) -> bool:

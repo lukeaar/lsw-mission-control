@@ -178,6 +178,13 @@ Fixed before the first release:
     a row listed before the work it runs after still waits for it.
   - A wait shows even when the target has no time left but is not done (it read "queued").
   - One rule in `progress.py` (`wait_for`, `in_wait_order`) serves every panel.
+- A hold with an end ends. An item with a `paused_until` read "paused" whether that time was still
+  to come or had passed (the plan is read once, and the hold was the plan's alone), so at a usage
+  reset every row held until it went on reading "paused" until the time was taken out of the plan
+  by hand. Now the hold ends on the clock, whatever `paused` says beside it: the row reads its real
+  stage, or `hold ended` with `not resumed` (the header counts `N not resumed`) while nothing of it
+  has run since: no agent of it active since that time or still at work, no job of it running. It
+  keeps the time left it had while held, and its agents are back in Agents at work.
 
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
 `[[plugins]]` name; `validate_options` names the type it expected. A plugin loaded by module name
