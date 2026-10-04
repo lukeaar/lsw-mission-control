@@ -128,8 +128,10 @@ def work_row(t: Table, name: str, p: Prog, bar_w: int, release: bool = False, jo
         return
     if p.paused:
         resume = getattr(p, "resume", None)
+        # A held row has no time left to colour its bar: the work done fills it in muted grey (the
+        # empty part's own colour, as it was, drew a held row at 71% as an empty bar).
         t.add_row(Text(name, style=C.MUTED), chips_of(p.marks, release, join), Text("paused", style=C.AMBER),
-                  bar(p.fraction, bar_w, C.SURFACE) + Text(f" {p.fraction * 100:3.0f}%", style=C.MUTED),
+                  bar(p.fraction, bar_w, C.MUTED) + Text(f" {p.fraction * 100:3.0f}%", style=C.MUTED),
                   Text(f"from {clock(resume)}", style=C.AMBER) if resume and resume > t_now else Text("—", style=C.MUTED))
         return
     colour = eta_colour(p.remaining, p.failed)

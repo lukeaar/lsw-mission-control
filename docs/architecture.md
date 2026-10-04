@@ -296,7 +296,8 @@ Panels:
   `[release] fallback_minutes`); milestone wording.
 - Next release.
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
-  live, stalled, plugin error), paused rows, the head and `also in motion`.
+  live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
+  head and `also in motion`.
 - The side row: plugin cards, then Repository.
 - Agents at work and the recent test suites.
 - Model usage: meters, stale data as a faint meter with a muted % and an amber `· as of HH:MM`,

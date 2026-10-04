@@ -56,16 +56,18 @@ item is common), so the plan can carry its own explanations.
   `owner_ok` (shows "your go-ahead" until it starts). See "Waits" below.
 - A fix whose review found nothing of severity blocker/major/minor is skipped (`–`); until the
   review is done its time is weighted by the fix share.
-- `paused: true`: held by the owner (its workflow was stopped). It reads "paused", with no finish
-  of its own, never "failed" or "queued"; the header counts it as paused, its agents leave Agents
-  at work, and it keeps its time left, so the release's finish and what runs after it count it.
+- `paused: true`: held by the owner (its workflow was stopped). It reads "paused" (its bar filled
+  with the work done in muted grey), with no finish of its own, never "failed" or "queued"; the
+  header counts it as paused, its agents leave Agents at work, and it keeps its time left, so the
+  release's finish and what runs after it count it.
 - `paused_until: "<ISO time with offset>"`: held until then (implies `paused`). The row says
   "from <when>", and its time left includes the hold, so what runs after it, and the release's
   finish, move past the hold.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 
-- `paused: true`: held by the owner — no finish time, and its idle agent is not a failure.
+- `paused: true`: held by the owner — its bar in muted grey, no finish time, and its idle agent is
+  not a failure.
 - `after`: another other item's **name**; this one waits for it (see "Waits" below). A name the
   plan no longer holds counts as done (a finished row leaves the plan). It has no effect on an
   `after_server` item, which follows its live job.

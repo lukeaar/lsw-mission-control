@@ -42,6 +42,9 @@ off. With the internet answering, the flag draws exactly as before.
 
 Fixed before the first release:
 
+- A paused row's bar fills with its work done in muted grey. It was filled in the empty part's own
+  colour, so a held row at 71% drew an empty bar beside its "71%".
+
 - A journal line whose result holds U+2028, U+2029 or U+0085 is read whole. The journal was split
   with `str.splitlines()`, which splits at those characters too, so the line with an agent's
   result was lost, and the finished agent read as running, then failed ("needs rerun"). A journal
