@@ -41,12 +41,12 @@
 │ agent        for           running   active  doing now                       │
 │ build:icons  New icon set      15m  20s ago  Bash · Run the unit tests       │
 ╰────────────────────────────────────────────────────────────────── 1 running ─╯
-╭─  Model usage  ──────────────────────────────────────────────────────────────╮
-│ plan         limits: no data yet                                             │
-│                                                                              │
-│ tokens        output  input  cache writes  cache reads                       │
-│ last 5 h        350k   1.2k          2.4M          41M                       │
-│ today           610k   2.1k          4.1M          88M                       │
-│ 7 days          4.9M    52k          120M         2.3B                       │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╭─  Model usage  ───────────────────────────────────────────╮ ╭────────────────╮
+│ plan         limits: no data yet                          │ │     ⣰⣦         │
+│                                                           │ │    ⣰⡟⢹⡆        │
+│ tokens        output  input  cache writes  cache reads    │ │   ⣰⡟  ⢿⡀       │
+│ last 5 h        350k   1.2k          2.4M          41M    │ │  ⣰⡟   ⠘⣧  ⢠⡶⣄  │
+│ today           610k   2.1k          4.1M          88M    │ │ ⠰⠟     ⢹⣆⢀⡿ ⠹⠆ │
+│ 7 days          4.9M    52k          120M         2.3B    │ │         ⠻⠾⠃    │
+╰───────────────────────────────────────────────────────────╯ ╰────── λ∿ 2026 ─╯
 Key: ━━ done   ━━ < 1 h   ━━ < 4 h   ━━ > 4 h   ━━ failed● safe to switch networ

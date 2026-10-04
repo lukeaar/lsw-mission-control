@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from rich.console import Console
 
 from lsw_mission_control.app import SCROLL_ENV, Scroll, apply_keys, scroll_envs
@@ -62,22 +63,28 @@ def test_scroll_window_pins_the_bottom_row(tmp_path):
     assert "λ∿ 2026" in "".join(lines)
 
 
-def test_logo_spins_on_the_alt_screen(tmp_path):
+@pytest.mark.parametrize("width, height", [(150, 80), (99, 60)])  # 99: the logo was not drawn below 100
+def test_logo_spins_on_the_alt_screen(tmp_path, width, height):
     p = Project(tmp_path)
     midway(p)
     e = p.engine()
-    console = Console(file=io.StringIO(), width=150, height=80, force_terminal=True, color_system="truecolor")
+    console = Console(file=io.StringIO(), width=width, height=height, force_terminal=True, color_system="truecolor")
     s = Scroll(150, e.logo)
+    s.offset = 10**6  # the end of the dashboard, which the logo closes: on screen at any height
     s.body, s.net, _ = e.safe_frame(console)
     console.set_alt_screen(True)
     console.print(s)
+    assert e.logo.geom is not None and s.logo_at is not None  # drawn, and found where it was drawn
     before = len(console.file.getvalue())
     s.spin(console)
-    written = console.file.getvalue()[before:]
-    assert e.logo.i == 1 and not e.logo.off and 0 < len(written) < before / 4  # only the logo's cells
+    first = console.file.getvalue()[before:]
+    s.spin(console)
+    second = console.file.getvalue()[before + len(first):]
+    assert e.logo.i == 2 and not e.logo.off and 0 < len(first) < before / 4  # only the logo's cells
+    assert second and second != first  # it turns: each tick draws the next frame
     e.logo.geom = None
     s.spin(console)
-    assert e.logo.i == 2
+    assert e.logo.i == 3
 
 
 def test_a_failing_body_shows_the_error_panel():

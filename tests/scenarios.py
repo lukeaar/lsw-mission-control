@@ -146,6 +146,12 @@ TOKENS = {"5h": [1200, 350_000, 2_400_000, 41_000_000], "today": [2100, 610_000,
 BY_MODEL = {"Opus": {"5h": 300_000, "today": 520_000, "7d": 4_100_000}, "Sonnet": {"5h": 50_000, "today": 90_000, "7d": 700_000},
             "Haiku": {"5h": 0, "today": 0, "7d": 100_000}, "other": {"5h": 0, "today": 0, "7d": 0}}
 
+# A plan-limit record the panel cannot read a window from: the status line saves Claude Code's
+# `rate_limits` as it comes whenever it is a non-empty dict, so a window that is null (or a key set the
+# panel does not know) gives Model usage no plan-limit row at all. Its grid (expand=True) is then empty,
+# and rich measures an empty flexible column at the whole width it is offered.
+UNREADABLE = {"at": NOW - 3 * MIN, "rate_limits": {"five_hour": None, "seven_day": None}, "source": "probe"}
+
 PS_SAFE = "    1     0  3-00:00:00 /sbin/launchd\n  400     1       10:00 /usr/bin/python3 /x/demo/.claude/status.py\n" \
           "  401   400       00:20 gh api repos/example/demo/commits/main --jq .sha\n"
 

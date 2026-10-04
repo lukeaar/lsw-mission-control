@@ -42,6 +42,17 @@ off. With the internet answering, the flag draws exactly as before.
 
 Fixed before the first release:
 
+- The logo shows in a window under 100 columns wide, and never cuts Model usage short. It was drawn
+  only from 100 columns, whatever Model usage held: a 99-column window had no logo at all, and at 100
+  the weekly row lost its end (`resets Thu 14:13 ·…`). Model usage now keeps the width its rows
+  measure (77 columns with plan limits, tokens and by-model data) and the logo takes the rest of the
+  row: square when there is room, narrower when there is not (the drawing shrinks, in a panel as tall
+  as Model usage), left out only when not even the smallest (5 rows, 12 columns of drawing) fits.
+  At 99 columns it is 17 columns of drawing beside 10 rows; beside a Model usage with no plan data
+  it now fits in 80. A row that grows takes its room from the logo: stale plan data adds
+  `· as of HH:MM` (Model usage 91 columns), so a 99-column window has no logo until the plan data
+  is fresh again.
+
 - A paused row's bar fills with its work done in muted grey. It was filled in the empty part's own
   colour, so a held row at 71% drew an empty bar beside its "71%".
 

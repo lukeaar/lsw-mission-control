@@ -63,7 +63,7 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[network] check_internet` | bool | `true` | the indicator's "not connected" state: a request to `http://captive.apple.com/hotspot-detect.html` every 5 s from the dashboard's own process (README, "The network indicator"); `false`: none |
 | `[layout] max_width` | int | `150` | every panel shares one right edge at most this far (at least 60) |
 | `[layout] panels` | [str] | `["notes","release","next","other","side","agents","usage"]` | order and choice; `plugin:<name>` places a plugin's full-width panel (a `[[plugins]]` name); `usage` must stay last while the logo is on |
-| `[logo] enabled` | bool | `true` | the logo beside Model usage (from 100 columns) |
+| `[logo] enabled` | bool | `true` | the logo beside Model usage, in the room Model usage leaves (it never clips it) |
 | `[logo] path` | str | the LSW logo | an SVG path with absolute `M`, `L` and `Q` commands only |
 | `[logo] viewbox` | num | `150` | the path's square box (its points must lie inside) |
 | `[logo] split_x` | num | `85.0` | left of this x the first colour, right of it the second |

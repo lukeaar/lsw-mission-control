@@ -6,10 +6,11 @@ import json
 from typing import TYPE_CHECKING
 
 from rich.console import Console, Group
+from rich.measure import Measurement
 from rich.table import Table
 from rich.text import Text
 
-from lsw_mission_control.render.logo import LogoAnimator, logo_panel
+from lsw_mission_control.render.logo import LOGO_MIN_COLS, LOGO_MIN_ROWS, LOGO_PANEL_PAD, LogoAnimator, logo_panel
 from lsw_mission_control.render.widgets import LABEL_W, METER_W, meter, panel
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import clock, count, human, now, num
@@ -80,7 +81,10 @@ def usage_panel(f: Frame, width: int):
             t.add_row(label, count(out), count(inp), count(cw), count(cr))
     else:
         t.add_row("", Text("counting the session logs…", style=C.FAINT), "", "", "")
-    parts = [g, Text(""), t]
+    # A grid with no row (a plan-data record with no window this panel reads, and no status) draws
+    # nothing, but rich measures its flexible column as wide as it is offered: usage_row would read
+    # Model usage as the whole row wide and leave the logo out. Left out, it draws the same.
+    parts = ([g] if g.row_count else []) + [Text(""), t]
     if by_model:
         m = Table(box=None, show_header=True, header_style=f"bold {C.FAINT}", pad_edge=False, padding=(0, 1))
         m.add_column("by model", style=C.MUTED, no_wrap=True, width=LABEL_W)
@@ -98,20 +102,40 @@ def usage_panel(f: Frame, width: int):
 
 
 def usage_row(console: Console, f: Frame, width: int, logo: LogoAnimator | None):
-    """Model usage with the logo panel to its right, both the same height (when there is room)."""
-    logo_w = None
-    if logo is not None and width >= 100:
-        probe = usage_panel(f, width - 40)
-        rows = len(console.render_lines(probe, console.options.update(width=width - 40, height=None))) - 2
-        if rows >= 5:
-            logo_w = (rows * 2 + 2) + 4
-    if not logo_w:
-        return usage_panel(f, width)
-    use_w = width - logo_w - 1
-    usage = usage_panel(f, use_w)
-    rows = len(console.render_lines(usage, console.options.update(width=use_w, height=None))) - 2
+    """Model usage with the logo panel to its right, both the same height, when there is room.
+
+    Model usage keeps its own width, MEASURED from what it draws now (rich's Measurement of the
+    panel: its widest row, border and padding included; its subtitle too; usage_panel leaves out a
+    grid with no row, which rich would measure the whole width), so the logo never clips it. The
+    logo takes the rest of the row, up to square (rows high, rows * 2 + 2 wide); given less,
+    its drawing shrinks to the width (logo_cells fits the drawing to the grid) inside a panel still
+    exactly as tall as Model usage, which is what the live view's locator relies on (app.Scroll: the
+    logo's panel closes the dashboard). It is left out only when Model usage is under LOGO_MIN_ROWS
+    rows, or when not even the smallest logo (LOGO_MIN_ROWS square: LOGO_MIN_COLS columns of
+    drawing, LOGO_PANEL_PAD more of panel) fits beside it.
+
+    Measured on the owner's window (2026-10-04, plan limits, tokens and by-model data present): the
+    plan-limit rows are the widest, 72 cells ("5-hour … resets Mon 01:00 · in 4h41") and 73 ("weekly …
+    resets Sun 13:00 · in 6d16h"), the token and by-model tables 54 each, so Model usage needs 77
+    columns. At 99 the logo gets 21 (17 of drawing beside 10 rows), the smallest fits from 94, the
+    square from 104. The fixed cut-off this replaces (the logo from 100 columns, whatever Model usage
+    held) left a 99-column window with no logo, and clipped the weekly row at 100 ("in …"). A row
+    that grows takes its room from the logo, never the reverse: plan data gone stale adds " · as of
+    HH:MM" (Model usage 91: the logo from 108), a reset passed with no plan data since 81 (from 98)."""
+    usage = usage_panel(f, width)
+    if logo is None:
+        return usage
+    opts = console.options.update(width=width, height=None)
+    rows = len(console.render_lines(usage, opts)) - 2
+    need = Measurement.get(console, opts, usage).maximum
+    sub = usage.subtitle
+    if sub:  # in the bottom border: a space either side of it, then two cells of border
+        need = max(need, (Text.from_markup(sub) if isinstance(sub, str) else sub).cell_len + 6)
+    cols = min(rows * 2 + 2, width - need - 1 - LOGO_PANEL_PAD)  # the row: Model usage, a space, the logo's panel
+    if rows < LOGO_MIN_ROWS or cols < LOGO_MIN_COLS:
+        return usage
     g = Table.grid(padding=(0, 1))
-    g.add_column(width=use_w)
-    g.add_column(width=(rows * 2 + 2) + 4)
-    g.add_row(usage, logo_panel(logo, rows))
+    g.add_column(width=width - (cols + LOGO_PANEL_PAD) - 1)
+    g.add_column(width=cols + LOGO_PANEL_PAD)
+    g.add_row(usage, logo_panel(logo, rows, cols))
     return g

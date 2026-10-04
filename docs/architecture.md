@@ -304,8 +304,12 @@ Panels:
   resets (and a passed reset), status (`warning: close to a limit`, `limit reached`, others),
   `using usage credits`, tokens and tokens by model, the subtitle
   `plan data as of HH:MM · X ago · probe|terminal`, placeholders while there is no data.
-- The logo beside Model usage from 100 columns when usage is ≥ 5 rows: square, two colours,
-  turning, with the `[logo] caption` at its bottom right in faint.
+- The logo beside Model usage when usage is ≥ 5 rows and leaves room for it: Model usage keeps its
+  measured width (rich's Measurement, with no empty grid in it, which rich measures the whole width:
+  a plan-data record with no window the panel reads; never clipped for the logo) and the logo takes
+  the rest of the row, square at most, narrower with the drawing shrunk to fit in a panel as tall
+  as Model usage, never under the 5-row square (12 columns of drawing); two colours, turning, with
+  the `[logo] caption` at its bottom right in faint.
 - The network row (not connected, network-critical, safe; a `?` lead and `connection unknown`); several
   dashboards at once; the palette (`[theme]`).
 

@@ -16,6 +16,12 @@ from lsw_mission_control.theme import C
 
 LOGO_FRAMES = 48  # one turn = LOGO_FRAMES / LOGO_FPS seconds
 LOGO_FPS = 8
+# The smallest logo: LOGO_MIN_ROWS rows (4 dots each) high and square, LOGO_MIN_COLS columns (twice
+# as many as rows, plus 2). Model usage must be at least that tall to have the logo beside it, and
+# leave it at least that many columns of drawing (render/usage.py).
+LOGO_MIN_ROWS = 5
+LOGO_MIN_COLS = LOGO_MIN_ROWS * 2 + 2
+LOGO_PANEL_PAD = 4  # a logo panel is its drawing and, each side, a border and a space
 
 
 def logo_points(segs, step=0.25):
@@ -96,10 +102,13 @@ class LogoAnimator:
         return self._pts
 
     def frame(self, rows: int, cols: int, i: int):
-        """Frame i of the turn, computed once per size and kept."""
+        """Frame i of the turn, computed once per size and kept. On a grid narrower than square the
+        drawing fits the width, about cols / 2 rows high, and gets the stroke of a square grid of
+        cols / 2 rows, whose drawing is that size (not of a square panel cols wide: (cols - 2) / 2
+        rows)."""
         frames = self.cache.setdefault((rows, cols), {})
         if i not in frames:
-            frames[i] = logo_cells(self.points(), self.cfg.split_x, rows, cols, stroke=max(6.0, 56.0 / rows),
+            frames[i] = logo_cells(self.points(), self.cfg.split_x, rows, cols, stroke=max(6.0, 56.0 / min(rows, cols / 2)),
                                    angle=2 * math.pi * i / LOGO_FRAMES)
         return frames[i]
 
@@ -116,10 +125,11 @@ class LogoAnimator:
         self.i = (self.i + 1) % LOGO_FRAMES
 
 
-def logo_panel(anim: LogoAnimator, rows: int) -> Panel:
-    """A square panel (rows high, twice as many columns wide) holding the logo, at the current
-    frame of its turn (the main loop advances the turn between full refreshes)."""
-    cols = rows * 2 + 2
+def logo_panel(anim: LogoAnimator, rows: int, cols: int | None = None) -> Panel:
+    """A panel `rows` high holding the logo, at the current frame of its turn (the main loop
+    advances the turn between full refreshes): square (twice as many columns as rows, plus 2)
+    unless given fewer `cols`, when the drawing shrinks to fit them, centred in the same height."""
+    cols = rows * 2 + 2 if cols is None else cols
     anim.geom = (rows, cols)
     left, right = anim.cfg.colours
     lines = []
@@ -130,5 +140,5 @@ def logo_panel(anim: LogoAnimator, rows: int) -> Panel:
         lines.append(t)
     caption = anim.cfg.caption
     return Panel(Group(*lines), box=box.ROUNDED, border_style=C.BORDER, padding=(0, 1), style=f"on {C.BG}",
-                 width=cols + 4, subtitle=Text(caption, style=anim.cfg.caption_style or C.FAINT) if caption else None,
+                 width=cols + LOGO_PANEL_PAD, subtitle=Text(caption, style=anim.cfg.caption_style or C.FAINT) if caption else None,
                  subtitle_align="right")
