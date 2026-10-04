@@ -104,6 +104,8 @@ freezes the clock.
   has resumed it. Then the final merge and the tag row (CI on the remote main, the tag, the release
   workflow run, from GitHub).
 - **Next release** (optional): planned items, grouped, with no finish time until work starts.
+  Then each **later release** (optional, the plan's `later`), in order, a panel of its own: an
+  item not yet begun waits on the release before its own (`after 1.5.0`).
 - **Other work in progress**: everything the release does not wait for, including rows that wait
   on a plugin's live job.
 - **The side row**: each plugin's card, then **Repository** (HEAD, unpushed commits, branches,

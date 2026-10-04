@@ -56,6 +56,32 @@ def test_parse_plan_shapes():
     assert m.stages == () and plan.next.about == "later"
 
 
+def test_parse_later_releases():
+    """`later`: the releases after the next one, in order, each shaped like `next`."""
+    plan = parse_plan({
+        "release": "1", "items": [], "next": {"release": "2", "items": []},
+        "later": [
+            {"release": "3", "about": "after 2", "items": [
+                {"key": "a", "name": "A", "group": "g", "before": [["design", "design:a", 30]], "build": 60},
+                {"key": None, "name": "B", "note": "ignored"}]},
+            {"release": 4, "items": [{"key": "c", "name": "C", "flags": ["after:a"], "review": 5}]},
+            {"release": "5"}]})
+    r3, r4, r5 = plan.later
+    assert (r3.release, r3.about, r4.release, r4.about, r5.items) == ("3", "after 2", "4", "", ())
+    a, b = r3.items
+    assert a.group == "g" and a.stages == (("design", "design:a", 30.0), ("build", "build:a", 60.0))
+    assert b.key is None and b.stages == ()
+    assert r4.items[0].flags == ("after:a",) and r4.items[0].stages == (("review", "review:c", 5.0),)
+    # each comes after the release before it: never after this one, unless there is no next release
+    assert [plan.release_before(i) for i in range(3)] == ["2", "3", "4"]
+    assert parse_plan({"release": "1", "items": [], "later": [{"release": "3"}]}).release_before(0) == "1"
+    # a plan without `later` (or an empty one) has none: one `next` reads as it always did
+    for raw in ({}, {"later": []}, {"later": None}):
+        assert parse_plan({"release": "1", "items": [], **raw}).later == ()
+    with pytest.raises(KeyError):
+        parse_plan({"release": "1", "items": [], "later": [{"items": []}]})  # a release needs its name, as next does
+
+
 def test_final_merge_by_hand_is_this_releases_only():
     plan = parse_plan({"release": "1.2.1", "items": [],
                        "final_merge_by_hand": {"release": "1.2.1", "at": "2026-09-28T03:34:00+10:00"}})
@@ -79,7 +105,8 @@ def test_after_live_is_another_name_for_after_server():
 BASE = {"release": "1", "items": [{"name": "I", "key": "i", "build": 10}],
         "other": [{"name": "O", "stages": [["s", "s:o", 5]]},
                   {"name": "J", "after_server": True, "stages": [["job", None, 0], ["check", "check:j", 5]]}],
-        "next": {"release": "2", "items": [{"key": "n", "name": "N", "build": 5}]}}
+        "next": {"release": "2", "items": [{"key": "n", "name": "N", "build": 5}]},
+        "later": [{"release": "3", "items": [{"key": "l", "name": "L", "build": 5}]}]}
 
 
 def with_change(path: str, value):
@@ -122,6 +149,13 @@ def with_change(path: str, value):
     ("next.items.0.key", ["n"], "key of 'N' must be text"),
     ("next.items.0.build", float("nan"), "build of 'N' must be a number"),
     ("next", [1], "next must be an object"),
+    ("later", {"release": "3"}, "later must be a list"),  # written like next: one release, not a list
+    ("later.0", [1], "later[0] must be an object"),
+    ("later.0.items", "L", "later[0].items must be a list"),
+    ("later.0.items.0", 3, "each of later[0].items must be an object"),
+    ("later.0.items.0.key", ["l"], "key of 'L' must be text"),
+    ("later.0.items.0.build", float("nan"), "build of 'L' must be a number"),
+    ("later.0.items.0.before", [["s", 3, 1]], "stage 's' of 'L': label must be text"),
 ])
 def test_shapes_that_would_fail_every_frame_are_refused(path, value, message):
     d = with_change(path, value)

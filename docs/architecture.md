@@ -80,10 +80,11 @@ Theme(bg, surface, border, text, muted, faint, accent, accent_soft, green, amber
 C.GREEN …                                             # the palette in use; theme.use(theme) at start-up
 Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, gh_timing, tokens, tokens_by_model,
                                                       # online (connectivity.Online)
-Plan(release, items, other, next, plugin_data, pre); .before(key)
+Plan(release, items, other, next, plugin_data, pre, final_merge_by_hand, later); .before(key) .release_before(i)
 Item(name, key, build, review, fix, flags, before, paused, paused_until); .held(at) .hold_ended(at)   # a hold
                                                       # with an end ends on the clock, not at the plan's next read
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags)
+NextRelease(release, about, items)                    # `next`, and each release of `later`
 PlanLoader(path, plugins).refresh() -> Plan           # mtime-gated; a bad parse keeps the last good plan; .note
 Notes(waiting_on_owner, in_progress_elsewhere, mtime); NotesLoader(path).refresh() -> Notes
 FinishedStore(path, readonly).merge(agents, plan, names, loaded, release_bound)   # release_bound: the final
@@ -109,7 +110,8 @@ Engine.frame / safe_frame -> (body, NetState(crit, conn), width)
 
 `Engine.frame` runs in this order: refresh the plan, fix the width (`min(console width,
 max_width)`), scan the transcripts and merge the finished store, `latest_by_label`, `calibrate`,
-build the release and next-release panels, then the title and the panels in `[layout] panels`
+build the release, next-release and later-release panels (`later[i]`, each in its own containment
+and drawn right after the next release's), then the title and the panels in `[layout] panels`
 order, then `network_critical()`. A panel that fails to build or to draw is replaced by an error
 panel in its own place; the rest of the frame draws.
 
@@ -310,7 +312,8 @@ Panels:
   `[release] fallback_minutes`); milestone wording; held items (`paused`, and `paused_until` held
   until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
   resumed` while nothing of the item has run since).
-- Next release.
+- Next release, then each later release (`later`) in order, all with one stage width: an item not
+  yet begun waits on the release before (`[release] later_wait`), never this one.
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
   live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
   head and `also in motion`.
@@ -334,8 +337,9 @@ Panels:
 ## 9. Tests
 
 `tests/test_*.py` cover each module; `tests/golden/` holds whole frames at 80/100/120/150 columns
-(plain and styled), the tag row's phases, held and ended holds (`hold-ended`), the usage states,
-the `after_server` states, the bottom row (its `conn-*` files: every connection state), a broken
-plan and notes, the frame-error panel and logo frames. All their data is synthetic
-(`tests/scenarios.py` and a stub plugin), generated at fixed offsets from a frozen clock.
+(plain and styled, a three-release plan among them), the tag row's phases, held and ended holds
+(`hold-ended`), the usage states, the `after_server` states, the bottom row (its `conn-*` files:
+every connection state), a broken plan and notes, the frame-error panel and logo frames. All their
+data is synthetic (`tests/scenarios.py` and a stub plugin), generated at fixed offsets from a frozen
+clock.
 `pytest --update-golden` rewrites the goldens; every changed line is reviewed before a commit.

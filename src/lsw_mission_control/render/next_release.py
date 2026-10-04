@@ -1,4 +1,5 @@
-"""The release after this one: its planned items, grouped, with their stages and state."""
+"""The releases after this one, each its own panel: the next release, then each later one (the
+plan's `later`), with their planned items, grouped, with their stages and state."""
 
 from __future__ import annotations
 
@@ -14,17 +15,36 @@ from lsw_mission_control.util import now
 
 if TYPE_CHECKING:
     from lsw_mission_control.engine import Frame
+    from lsw_mission_control.plan import NextRelease
 
 
 def next_panel(f: Frame, width: int):
     """None when the plan has no next release, or it has no items."""
-    nxt, labels, rc = f.plan.next, f.labels, f.cfg.release
+    nxt = f.plan.next
     if not nxt or not nxt.items:
         return None
+    return planned_panel(f, width, nxt, f.cfg.release.next_title)
+
+
+def later_panel(f: Frame, width: int, i: int):
+    """The plan's `later[i]`, a release after the next one; None when it has no items. Its items not
+    yet begun wait on the release before it (`[release] later_wait`), never on this one."""
+    rel = f.plan.later[i]
+    if not rel.items:
+        return None
+    return planned_panel(f, width, rel, f.cfg.release.later_title, f.plan.release_before(i))
+
+
+def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_release: str | None = None):
+    """A release after this one. `after_release`: the release it comes after, which its items not yet
+    begun wait on (None for the next release: its items wait on nothing but each other)."""
+    labels, rc = f.labels, f.cfg.release
     t_now = now()
-    # Planned items can have many stages: a column of its own keeps them from widening every
-    # other panel's stage column and squeezing the names out.
-    most = max((len(i.stages) for i in nxt.items), default=3)
+    # Planned items can have many stages: a column of their own keeps them from widening every
+    # other panel's stage column and squeezing the names out, one width for every planned release
+    # so that their panels line up.
+    planned = [i for rel in (f.plan.next, *f.plan.later) if rel for i in rel.items]
+    most = max((len(i.stages) for i in planned), default=3)
     t, bar_w = work_table("stages", width, f.plan, rc.final_merge, stages_w=max(16, 2 * most - 1))
     live = done = waiting_owner = 0
     group = None
@@ -76,12 +96,15 @@ def next_panel(f: Frame, width: int):
             waiting_owner += 1
         elif not started:
             # Planned, not scheduled: no finish time. The first unfinished stage says what it waits
-            # for: one named "your ..." (a decision, a go-ahead, a pick-list) is the owner's.
+            # for: one named "your ..." (a decision, a go-ahead, a pick-list) is the owner's. A later
+            # release's item waits on the release before it, the owner's first stage included.
             first = item.stages[0] if item.stages else None
             owner = (first is not None and first[1] is None and first[0].lower().startswith("your")
-                     and not blocking)
+                     and not blocking and after_release is None)
             if blocking:
                 p.current = f"after {short_name(nxt.items[wait[1]].name, f.plan.items)}"
+            elif after_release is not None:
+                p.current = rc.later_wait.format(release=after_release)
             elif owner:
                 p.current = first[0]
             elif first is not None and first[1] is None:
@@ -94,7 +117,7 @@ def next_panel(f: Frame, width: int):
             live += 1
         work_row(t, item.name, p, bar_w)
     n = len(nxt.items)
-    phrases = [Text(f"{n} items planned", style=C.ACCENT_SOFT)]
+    phrases = [Text(f"{n} item{'' if n == 1 else 's'} planned", style=C.ACCENT_SOFT)]
     if live:
         phrases.append(Text(f"{live} under way", style=C.ACCENT_SOFT))
     if waiting_owner:
@@ -103,4 +126,4 @@ def next_panel(f: Frame, width: int):
         phrases.append(Text(f"{done} done", style=C.GREEN))
     if nxt.about:
         phrases.append(Text(nxt.about, style=C.MUTED))
-    return panel(Group(pack(phrases, width - 4), Text(""), t), rc.next_title.format(release=nxt.release))
+    return panel(Group(pack(phrases, width - 4), Text(""), t), title.format(release=nxt.release))

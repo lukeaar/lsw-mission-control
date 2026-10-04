@@ -21,6 +21,16 @@ A release item can be held (`"paused": true`), as an Other item can: it reads "p
 agents leave Agents at work; the release's finish still counts its time left. With
 `"paused_until": "<ISO time>"` the row says "from <when>" and the hold's own length counts too.
 
+A plan can list the releases after the next one: `later`, one `{release, about, items}` per release,
+in the order they ship, each shaped like `next`. Each is a panel of its own right after the next
+release's (`Later release 1.6.0`; `[release] later_title`), and its items not yet begun wait on the
+release before their own (`after 1.5.0`; `[release] later_wait`, e.g. `"{release} installed"`),
+never on this one, an owner's first stage included. A release two out used to go in as a group at
+the bottom of the next release's panel, where its first stage, a null stage typed by hand, named
+the wrong release's install. A plan with one `next` draws as before (but for `1 item planned`, which
+read `1 items planned`); when a release ships, `next` becomes `items` and the first of `later`
+becomes `next`.
+
 The network indicator has a third state, **NOT CONNECTED** (an amber chip, ` ⊘ NOT CONNECTED `,
 with why: `no network`, `captive portal`, `no answer in 2s`, ...): this computer has no working
 internet. It outranks NETWORK-CRITICAL and "safe to switch", and lists the network work in flight

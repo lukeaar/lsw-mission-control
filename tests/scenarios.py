@@ -269,6 +269,35 @@ def next_release(p: Project) -> None:
     p.ps = PS_SAFE
 
 
+def later_releases(p: Project) -> None:
+    """Three releases: this one, the next, and the one after it (`later`). The later release's items
+    not yet begun wait on the next release, never on this one (an owner's first stage too); one runs
+    after another of its own release; one begun early reads its stage and its time."""
+    plan = release_plan()
+    plan["items"] = plan["items"][:1]
+    plan["other"] = []
+    plan["next"] = {"release": "1.5.0", "about": "the offline release", "items": [
+        {"key": "decide", "name": "Pick the sync engine", "group": "first", "before": [["your pick", None, 0]], "build": 0},
+        {"key": "sync", "name": "Offline sync", "group": "first", "build": 240, "review": 45, "fix": 60,
+         "flags": ["after:decide"]},
+        {"key": "icons", "name": "New icon set", "group": "then", "build": 30, "review": 10}]}
+    plan["later"] = [{"release": "1.6.0", "about": "once 1.5.0 is out", "items": [
+        {"key": "rollout", "name": "First week of 1.5.0 on the early sites", "group": "after the release",
+         "before": [["first-day check", "check:rollout", 60], ["a week of use", None, 0]], "review": 30},
+        {"key": "plugins", "name": "Plugin API", "group": "then", "before": [["your scope", None, 0]],
+         "build": 180, "review": 40, "fix": 45},
+        {"key": "themes", "name": "Themes as plugins", "group": "then", "build": 60, "review": 20,
+         "flags": ["after:plugins"]},
+        {"key": "search", "name": "Search across workspaces", "group": "then",
+         "before": [["design", "design:search", 45]], "build": 120, "review": 30}]}]
+    p.plan(plan)
+    p.notes()
+    p.agent("build:icons", start_ago=15 * MIN, quiet_s=20)
+    p.agent("design:search", start_ago=25 * MIN, quiet_s=30, run="wf_run-d", action="Write · docs/design/search.md")
+    p.store = {"git": dict(GIT), "tokens": TOKENS}
+    p.ps = PS_SAFE
+
+
 def agents_many(p: Project) -> None:
     """More agents than rows: the quiet ones past red always get a row (silence counts as
     stopped only after 90 min here, so an agent can be idle past red and still running)."""
@@ -288,4 +317,5 @@ def agents_many(p: Project) -> None:
     p.ps = PS_SAFE
 
 
-SCENARIOS = {"empty": empty, "release-midway": midway, "next-release": next_release, "agents-many": agents_many}
+SCENARIOS = {"empty": empty, "release-midway": midway, "next-release": next_release, "agents-many": agents_many,
+             "later-releases": later_releases}

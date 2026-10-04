@@ -31,7 +31,13 @@ item is common), so the plan can carry its own explanations.
   "next": {"release": "1.5.0", "about": "sync first", "items": [
     {"key": "sync", "name": "Offline sync", "group": "first", "before": [["your pick", null, 0]], "build": 240, "review": 45},
     {"key": "icons", "name": "New icon set", "group": "then", "build": 30, "flags": ["after:sync"]}
-  ]}
+  ]},
+  "later": [
+    {"release": "1.6.0", "about": "once 1.5.0 is out", "items": [
+      {"key": "rollout", "name": "First week of 1.5.0", "before": [["first-day check", "check:rollout", 60]]},
+      {"key": "plugins", "name": "Plugin API", "group": "then", "build": 180, "review": 40}
+    ]}
+  ]
 }
 ```
 
@@ -44,6 +50,7 @@ item is common), so the plan can carry its own explanations.
 | `items` | yes | what the release waits for |
 | `other` | no | work in progress the release does not wait for |
 | `next` | no | the release after this one (its panel shows only when it has items) |
+| `later` | no | the releases after that one, in order: a list of `next`-shaped releases, each its own panel |
 | *plugin keys* | per plugin | a plugin may own keys; it validates them, and a plan it rejects is not loaded |
 
 ### `items`: `{name, key, build, review, fix, flags?, before?, paused?, paused_until?}`
@@ -88,10 +95,23 @@ Planned, not scheduled: no finish time until work on an item starts. Items are g
 `after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below).
 `build`/`review`/`fix` become stages only when their minutes are above 0.
 
+### `later`: `[{release, about, items}, …]`
+
+The releases after the next one, in the order they ship, each shaped like `next` (its items too).
+Each is its own panel, right after the next release's (titled by `[release] later_title`,
+`Later release 1.6.0`); one with no items has none. An item not yet begun waits on the release
+before its own: its stage reads `after 1.5.0` (`[release] later_wait`, which may say
+`"{release} installed"`), never this release, with no finish time. That holds for an item whose
+first stage is the owner's (`your …`) too, which is not counted as waiting on you; `after:<key>`
+(an item of the same release) reads `after <name>`, as in `next`. Once work on an item begins it
+reads as a next item does: its stage and its time left. The first later release comes after `next`
+(after this one, in a plan with no `next`). When a release ships, `next` becomes `items` and the
+first of `later` becomes `next`.
+
 ### Waits
 
-The same rule for `after` (other), `after:<key>` and `after_all` (items) and `after:<key>` (next),
-until everything a row runs after is done:
+The same rule for `after` (other), `after:<key>` and `after_all` (items) and `after:<key>` (next
+and later), until everything a row runs after is done:
 
 - While nothing of its own is running, its stage reads `after <name>` (the one of them that
   finishes last).
@@ -99,7 +119,8 @@ until everything a row runs after is done:
   began early runs on beside it. Its time left is the longer of the two, plus its stages not
   yet begun.
 - If one of them has no finish time (stalled, paused, not reached, a plugin error, or, in Other
-  work and the next release, failed), the row has none either (`—`) and is never "next to finish".
+  work and the releases after this one, failed), the row has none either (`—`) and is never "next
+  to finish".
   A release item after a failed one counts that item's re-run, as the release's finish time does.
 - A tie for "next to finish" goes to the row that is not waiting.
 - A row listed before the one it waits for still waits for it. A cycle (a typo) is broken where it

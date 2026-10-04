@@ -30,7 +30,7 @@ from lsw_mission_control.render.agents import agents_panel
 from lsw_mission_control.render.frame import bottom_line, title_line
 from lsw_mission_control.render.guard import Guarded
 from lsw_mission_control.render.logo import LogoAnimator
-from lsw_mission_control.render.next_release import next_panel
+from lsw_mission_control.render.next_release import later_panel, next_panel
 from lsw_mission_control.render.notes import notes_panel
 from lsw_mission_control.render.other import other_panel
 from lsw_mission_control.render.release import release_panel
@@ -320,10 +320,12 @@ class Engine:
         # The release and next panels are built first, as they always were. Each panel is built,
         # and later drawn, in its own containment: a failure shows in its place, the rest draws.
         built: dict = {}
+        later: list = []  # (name, panel) of each release after the next: drawn right after it
         if "release" in panels and cfg.release.enabled:
             built["release"] = self._build("release", self.release_row, f, width)
         if "next" in panels:
             built["next"] = self._build("next", next_panel, f, width)
+            later = [(f"later[{i}]", self._build(f"later[{i}]", later_panel, f, width, i)) for i in range(len(f.plan.later))]
         parts: list = [title_line(cfg.title, cfg.subtitle, self.reload_note, self.plans.note, self.notes.note), Text("")]
         for name in panels:
             body = None
@@ -345,8 +347,10 @@ class Engine:
                     body, err = self._plugin_call(f, p, "panel", width, f, check=check_panel)
                     if err:
                         body = panel(Text(err, style=f"bold {C.RED_SOFT}"), p.name)
-            if body is not None:
-                parts.append(Guarded(body, lambda e, name=name: self._stand_in(name, e, f"drawing the {name} panel")))
+            bodies = [(name, body)] + (later if name == "next" else [])
+            for name_, body_ in bodies:
+                if body_ is not None:
+                    parts.append(Guarded(body_, lambda e, n=name_: self._stand_in(n, e, f"drawing the {n} panel")))
         return Group(*parts), NetState(self.network_critical(), self.safe_connection()), width
 
     def connection(self) -> Conn | None:

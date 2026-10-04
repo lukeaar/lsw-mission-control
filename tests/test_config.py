@@ -28,6 +28,7 @@ def test_defaults(tmp_path):
     assert cfg.github.repo is None and cfg.plugins == ()
     assert cfg.layout.panels == DEFAULT_PANELS and cfg.layout.max_width == 150
     assert cfg.release.final_merge.minutes == 210 and cfg.release.fix_share == 0.7
+    assert cfg.release.later_title == "Later release {release}" and cfg.release.later_wait == "after {release}"
     assert cfg.logo.caption == "λ∿ 2026" and cfg.logo.colours == ("#A221D9", "#D96D21")
     assert cfg.theme.bg == "#252226"
 
@@ -76,6 +77,8 @@ def test_cache_dir_overrides(tmp_path, monkeypatch):
     ("schema = 1\n[project]\nprojects_dir = 5\n", "[project].projects_dir must be text"),
     ("schema = 1\n[release]\ntitle = '{release.upper.x}'\n", "[release].title may use only {release}"),
     ("schema = 1\n[release]\ntag_row = 'Tag {0}'\n", "[release].tag_row may use only {release}"),
+    ("schema = 1\n[release]\nlater_title = 'Then {version}'\n", "[release].later_title may use only {release}"),
+    ("schema = 1\n[release]\nlater_wait = 'after {0}'\n", "[release].later_wait may use only {release}"),
     ("schema = 1\n[test_logs]\nglobs = ['{nope}/*.log']\n", "[test_logs].globs: '{nope}/*.log' may use only"),
     ("schema = 1\n[plan]\nafter_server = 'nope'\n", "[plan].after_server: no [[plugins]] entry is named 'nope'"),
     ("schema = 1\n[layout]\npanels = ['notes', 'plugin:nope']\n", "'plugin:nope' names no [[plugins]] entry"),

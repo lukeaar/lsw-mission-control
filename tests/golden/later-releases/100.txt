@@ -1,0 +1,61 @@
+ DEMO   mission control   Mon 21 Sep · 14:13:20
+
+╭─  Waiting on you  ───────────────────────────────────────────────────────────────────────────────╮
+│ ✓ nothing is waiting on you                                                                      │
+╰───────────────────────────────────────────────────────────────────────── updated 14:08 · 5m ago ─╯
+╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────╮
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 0% of the release done  ·  1/1 items ready                              │
+│                          release out 20:13 (in 6h00)                                             │
+│                                                                                                  │
+│ item                   stages       stage            progress                                eta │
+│ ● 1 finished                                                                                   ✓ │
+│                                                                                                  │
+│ Final merge       after all above   from now         takes ~3h30                      done 17:43 │
+│ Tag 1.4.0         CI, tag, release  from 17:43       takes ~2h30                       out 20:13 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Next release 1.5.0  ───────────────────────────────────────────────────────────────────────────╮
+│ 3 items planned  ·  1 under way  ·  1 wait on you  ·  the offline release                        │
+│                                                                                                  │
+│ item                   stages       stage            progress                                eta │
+│ first                                                                                            │
+│ Pick the sync e…         ○          your pick        ━━━━━━━━━━━━━━━━━━   0%                   — │
+│ Offline sync           ○─○─○        after pick       ━━━━━━━━━━━━━━━━━━   0%                   — │
+│ then                                                                                             │
+│ New icon set            ◉─○         build            ━━━━━━━━━━━━━━━━━━  38%        ~25m · 14:38 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Later release 1.6.0  ──────────────────────────────────────────────────────────────────────────╮
+│ 4 items planned  ·  1 under way  ·  once 1.5.0 is out                                            │
+│                                                                                                  │
+│ item                   stages       stage            progress                                eta │
+│ after the relea…                                                                                 │
+│ First week of 1…       ○─○─○        after 1.5.0      ━━━━━━━━━━━━━━━━━━   0%                   — │
+│ then                                                                                             │
+│ Plugin API            ○─○─○─○       after 1.5.0      ━━━━━━━━━━━━━━━━━━   0%                   — │
+│ Themes as plugi…        ○─○         after plugin     ━━━━━━━━━━━━━━━━━━   0%                   — │
+│ Search across w…       ◉─○─○        design           ━━━━━━━━━━━━━━━━━━  13%       ~2h50 · 17:03 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Other work in progress  ───────────────────────────────────────────────────────────────────────╮
+│ 0 in progress                                                                                    │
+│                                                                                                  │
+│ item                   stages       stage            progress                                eta │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Repository  ───────────────────────────────────────────────────────────────────────────────────╮
+│ main         3f2a9c1 Wire the export button to the new endpoint                                  │
+│ unpushed     2 commits                                                                           │
+│ branches     1  ·  2 worktrees                                                                   │
+│ pull reqs    …                                                                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─  Agents at work  ───────────────────────────────────────────────────────────────────────────────╮
+│ agent          for                       running   active  doing now                             │
+│ build:icons    New icon set                  15m  20s ago  Bash · Run the unit tests             │
+│ design:search  Search across workspaces      25m  30s ago  Write · docs/design/search.md         │
+╰────────────────────────────────────────────────────────────────────────────────────── 2 running ─╯
+╭─  Model usage  ───────────────────────────────────────────────────────────────╮ ╭────────────────╮
+│ plan         limits: no data yet                                              │ │     ⣰⣦         │
+│                                                                               │ │    ⣰⡟⢹⡆        │
+│ tokens        output  input  cache writes  cache reads                        │ │   ⣰⡟  ⢿⡀       │
+│ last 5 h        350k   1.2k          2.4M          41M                        │ │  ⣰⡟   ⠘⣧  ⢠⡶⣄  │
+│ today           610k   2.1k          4.1M          88M                        │ │ ⠰⠟     ⢹⣆⢀⡿ ⠹⠆ │
+│ 7 days          4.9M    52k          120M         2.3B                        │ │         ⠻⠾⠃    │
+╰───────────────────────────────────────────────────────────────────────────────╯ ╰────── λ∿ 2026 ─╯
+Key: ━━ done   ━━ < 1 h   ━━ < 4 h   ━━ > 4 h   ━━ failed                  ● safe to switch networks

@@ -173,10 +173,11 @@ def label_names(plan: Plan, fm: FinalMergeCfg) -> dict[str, str]:
         for _stage, spec, _m in item.stages:
             for label in _spec_labels(spec):
                 names[label] = item.name
-    for item in (plan.next.items if plan.next else ()):
-        for _stage, spec, _m in item.stages:
-            for label in _spec_labels(spec):
-                names[label] = item.name
+    for rel in (plan.next, *plan.later):  # the releases after this one: work begun on them early
+        for item in (rel.items if rel else ()):
+            for _stage, spec, _m in item.stages:
+                for label in _spec_labels(spec):
+                    names[label] = item.name
     return names
 
 

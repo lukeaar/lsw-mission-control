@@ -56,6 +56,8 @@ class ReleaseCfg:
     tag_prefix: str = "v"
     title: str = "Release {release}"
     next_title: str = "Next release {release}"
+    later_title: str = "Later release {release}"  # each release after the next (the plan's `later`)
+    later_wait: str = "after {release}"  # what a later release's item not yet begun waits on: the release before it
     tag_row: str = "Tag {release}"
     tag_todo_text: str = "CI, tag, release"
     words: dict = field(default_factory=lambda: dict(DEFAULT_WORDS))
@@ -334,8 +336,9 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
                        _at_least(_get(gh, "[github]", "poll_s", int, 120), "[github].poll_s", 30, " (seconds)"),
                        _at_least(_get(gh, "[github]", "timing_poll_s", int, 600), "[github].timing_poll_s", 60, " (seconds)"))
 
-    r = _table(raw, "release", {"enabled", "tag_prefix", "title", "next_title", "tag_row", "tag_todo_text", "words",
-                                "fallback_minutes", "hands_minutes", "release_run_minutes", "fix_share", "final_merge"})
+    r = _table(raw, "release", {"enabled", "tag_prefix", "title", "next_title", "later_title", "later_wait", "tag_row",
+                                "tag_todo_text", "words", "fallback_minutes", "hands_minutes", "release_run_minutes",
+                                "fix_share", "final_merge"})
     words = dict(DEFAULT_WORDS)
     w = _get(r, "[release]", "words", dict, {})
     for k, v in w.items():
@@ -365,6 +368,8 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
         tag_prefix=_get(r, "[release]", "tag_prefix", str, "v"),
         title=_get(r, "[release]", "title", str, "Release {release}"),
         next_title=_get(r, "[release]", "next_title", str, "Next release {release}"),
+        later_title=_get(r, "[release]", "later_title", str, "Later release {release}"),
+        later_wait=_get(r, "[release]", "later_wait", str, "after {release}"),
         tag_row=_get(r, "[release]", "tag_row", str, "Tag {release}"),
         tag_todo_text=_get(r, "[release]", "tag_todo_text", str, "CI, tag, release"),
         words=words,
@@ -378,7 +383,7 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
     if release.fallback_minutes < release.hands_minutes + release.release_run_minutes:
         # the fallback covers CI too: what is left of it once the other two are taken out
         raise ConfigError("[release].fallback_minutes must be at least hands_minutes + release_run_minutes")
-    for key in ("title", "next_title", "tag_row"):
+    for key in ("title", "next_title", "later_title", "later_wait", "tag_row"):
         try:
             getattr(release, key).format(release="x")
         except Exception:  # noqa: BLE001 — "{release.upper}", "{0}", "{x}", "{": all the same mistake

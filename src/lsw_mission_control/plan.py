@@ -66,6 +66,8 @@ class NextItem:
 
 @dataclass(frozen=True)
 class NextRelease:
+    """A release after this one: the next (`next`), or one after that (`later`)."""
+
     release: str
     about: str
     items: tuple[NextItem, ...]
@@ -82,10 +84,18 @@ class Plan:
     # When this release's final merge was done by hand (a hotfix released without a final-merge
     # workflow): `final_merge_by_hand` = {"release": ..., "at": ISO time}. Only the named release's.
     final_merge_by_hand: float | None = None
+    later: tuple[NextRelease, ...] = ()  # the releases after `next`, in order
 
     def before(self, key: str | None) -> list:
         """An item's stages before its build ([] for none)."""
         return list(self.pre.get(key, ())) if key is not None else []
+
+    def release_before(self, i: int) -> str:
+        """The release `later[i]` comes after: the one before it in `later`, else the next release
+        (this one, in a plan with no next release)."""
+        if i > 0:
+            return self.later[i - 1].release
+        return self.next.release if self.next is not None else self.release
 
 
 EMPTY_PLAN = Plan("?")
@@ -180,25 +190,8 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
         if after_server and not stages:
             raise ValueError(f"{name!r} waits on a live job: its first stage is the job's, so it needs one")
         other.append(OtherItem(name, stages, bool(o.get("paused")), after, after_server))
-    nxt = None
-    if d.get("next"):
-        n = _obj(d["next"], "next")
-        nitems = []
-        for it in _list(n.get("items", []), "next.items"):
-            it = _obj(it, "each of next.items")
-            name = str(it["name"])
-            key = it.get("key")
-            if (key is not None and not isinstance(key, (str, int))) or isinstance(key, bool):
-                raise ValueError(f"key of {name!r} must be text")
-            key = None if key is None else str(key)
-            stages = [parse_stage(st, it["name"]) for st in _list(it.get("before", []), f"before of {name!r}")]
-            if key:
-                mins = {k: int(_number(it.get(k, 0), f"{k} of {name!r}", whole=True)) for k in ("build", "review", "fix")}
-                stages += [parse_stage([k, f"{k}:{key}", mins[k]], it["name"]) for k in ("build", "review", "fix")
-                           if mins[k] > 0]
-            nitems.append(NextItem(name, key, str(it.get("group", "")), tuple(stages),
-                                   tuple(str(f) for f in _list(it.get("flags", []), f"flags of {name!r}"))))
-        nxt = NextRelease(str(n["release"]), str(n.get("about", "")), tuple(nitems))
+    nxt = _planned_release(d["next"], "next") if d.get("next") else None
+    later = tuple(_planned_release(r, f"later[{i}]") for i, r in enumerate(_list(d.get("later") or [], "later")))
     release = str(d["release"])
     by_hand = None
     if d.get("final_merge_by_hand") is not None:
@@ -212,7 +205,29 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
         # A mark left over from the release before is ignored, never carried into this one.
         by_hand = at if str(fm["release"]) == release else None
     plugin_data = {p.name: p.parse_plan(d) for p in plugins}
-    return Plan(release, tuple(items), tuple(other), nxt, plugin_data, pre, by_hand)
+    return Plan(release, tuple(items), tuple(other), nxt, plugin_data, pre, by_hand, later)
+
+
+def _planned_release(n, where: str) -> NextRelease:
+    """`next`, or one of `later`: {release, about, items: [{key, name, group, before, build, review,
+    fix, flags}]}. Planned, not scheduled: build/review/fix become stages only above 0 minutes."""
+    n = _obj(n, where)
+    nitems = []
+    for it in _list(n.get("items", []), f"{where}.items"):
+        it = _obj(it, f"each of {where}.items")
+        name = str(it["name"])
+        key = it.get("key")
+        if (key is not None and not isinstance(key, (str, int))) or isinstance(key, bool):
+            raise ValueError(f"key of {name!r} must be text")
+        key = None if key is None else str(key)
+        stages = [parse_stage(st, it["name"]) for st in _list(it.get("before", []), f"before of {name!r}")]
+        if key:
+            mins = {k: int(_number(it.get(k, 0), f"{k} of {name!r}", whole=True)) for k in ("build", "review", "fix")}
+            stages += [parse_stage([k, f"{k}:{key}", mins[k]], it["name"]) for k in ("build", "review", "fix")
+                       if mins[k] > 0]
+        nitems.append(NextItem(name, key, str(it.get("group", "")), tuple(stages),
+                               tuple(str(f) for f in _list(it.get("flags", []), f"flags of {name!r}"))))
+    return NextRelease(str(n["release"]), str(n.get("about", "")), tuple(nitems))
 
 
 class PlanLoader:
