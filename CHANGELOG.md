@@ -53,6 +53,19 @@ Fixed before the first release:
   `· as of HH:MM` (Model usage 91 columns), so a 99-column window has no logo until the plan data
   is fresh again.
 
+- `--self-check`, the reload gate, draws the dashboard at three window sizes, 150×50, 99×60 and
+  80×40 (it drew 150×50 only), and at the tightest width the logo fits in, each twice: with nothing
+  counted, as a window starts, and with made-up token counts held in its own memory, as a window
+  runs. Model usage is then taller, and the logo beside it narrower than square where room is
+  tight, which the gate never drew before. It fails on a logo that would stand still: left out
+  though Model usage leaves it room (as the fixed 100-column cut-off left it at 99 columns), drawn
+  where the live view does not find it (nowhere, or at other cells than its own), or a turn that
+  redraws nothing while it is on screen; and on a logo that cuts Model usage short. Each of these
+  went by with nothing said: the gate failed only on an error raised while turning the logo. Room
+  is told by drawing Model usage narrower and narrower, not by the rule that placed the logo, and
+  every frame of the check is drawn at one instant, so a countdown that narrows during the check
+  (`in 1h00`, then `in 59m`) cannot fail a sound edit.
+
 - A paused row's bar fills with its work done in muted grey. It was filled in the empty part's own
   colour, so a held row at 71% drew an empty bar beside its "71%".
 

@@ -222,11 +222,13 @@ that fails to build or to draw shows the error in its own place.
 
 A live dashboard reloads itself when the engine's code, a plugin, the config or the launcher
 changes — but only once the change compiles AND passes `--check-net --self-check` (every module
-imports, every plugin loads, one frame is built and drawn with no error in any panel or plugin,
-the logo turns, the keys parse). A broken edit is
-not loaded: the title says `edit to <file> not loaded: <why>`, the running code stays, and the
-next edit is tried again. Edits settle for 2 s first. The plan and notes are re-read on every
-refresh and never restart anything.
+imports, every plugin loads, the dashboard is built and drawn with no error in any panel or plugin
+at three window sizes and at the tightest width the logo fits in, before and after token counts
+come in, the logo is drawn wherever Model usage leaves it room, never cuts Model usage short, and
+is found and turns where it is drawn, the keys parse). A broken edit is not loaded: the title says
+`edit to <file> not loaded: <why>`, the running code stays, and the next edit is tried again.
+Edits settle for 2 s first. The plan and notes are re-read on every refresh and never restart
+anything.
 
 It restarts *through the launcher path*, keeping its scroll position, so replacing the launcher
 file reloads a running window into whatever the file now holds.

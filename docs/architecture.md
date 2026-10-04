@@ -205,9 +205,21 @@ two writers of one real `finished.json` must never race.
   keeps its scroll position, and replacing the launcher file reloads the window into whatever the
   file now holds.
 - `--check-net` on its own also imports every module and loads every plugin, so a gate that runs
-  only it still refuses a broken edit. `--self-check` renders one frame through the live `Scroll`
-  at 150×50 into a null console, draws the pinned row's other states through it (not connected,
-  network-critical, safe, unknown), turns the logo once and feeds the key parser.
+  only it still refuses a broken edit. `--self-check` renders the dashboard through the live
+  `Scroll` into a null console, every frame at one instant (it holds the clock still while it
+  draws), in two passes: nothing counted, as a window starts, then with made-up token counts in its
+  own engine's memory (`SELF_CHECK_TOKENS`), as a window runs, where Model usage is taller. Each pass
+  draws at 150×50, 99×60 and 80×40 (`SELF_CHECK_SIZES`) and at the tightest width the logo fits in:
+  Model usage's narrowest whole width (`usage_fit`: drawn narrower and narrower until a row, a
+  table or its subtitle is cut short; not `usage_row`'s Measurement) plus the smallest logo panel
+  and the space before it, where with token counts the logo is narrower than square. The first
+  frame also draws the pinned row's other states (not connected, network-critical, safe, unknown);
+  every frame turns the logo, and the key parser is fed last. It reads each frame's errors first,
+  then the logo's: where the logo is left out it fails when Model usage drawn beside the smallest
+  logo panel shows exactly what it shows the whole width (room, told by drawing); where it is drawn
+  it fails when it has more columns than Model usage's whole width leaves it (it would cut Model
+  usage short), then scrolls to the end and fails unless the live view finds it (`Scroll.logo_at`)
+  at the very cells that hold the drawn frame, and a turn redraws them.
 
 ---
 

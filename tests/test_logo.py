@@ -7,7 +7,7 @@ import pytest
 from rich.console import Group
 from rich.table import Table
 
-from lsw_mission_control import testing
+from lsw_mission_control import cli, testing
 from lsw_mission_control.config import DEFAULT_LOGO_PATH, LogoCfg, parse_logo_path
 from lsw_mission_control.render.logo import LOGO_FRAMES, LOGO_MIN_COLS, LOGO_PANEL_PAD, LogoAnimator, logo_cells, logo_panel, logo_points
 from lsw_mission_control.render.usage import usage_panel, usage_row
@@ -60,11 +60,12 @@ def test_a_panel_narrower_than_square():
 
 
 def usage_row_at(e, width: int):
-    """(the Model usage row drawn at `width`, plain; the logo's (rows, cols), None when not drawn)."""
+    """(the Model usage row drawn at `width`, plain; the logo's (rows, cols), None when not drawn; the
+    frame; the row)."""
     f = e.build_frame(width)
     e.logo.geom = None
     row = usage_row(testing.record_console(width), f, width, e.logo)
-    return testing.render_text(row, width)[0], e.logo.geom, f
+    return testing.render_text(row, width)[0], e.logo.geom, f, row
 
 
 def test_model_usage_keeps_its_width_and_the_logo_gets_the_rest(tmp_path, update_golden):
@@ -79,12 +80,14 @@ def test_model_usage_keeps_its_width_and_the_logo_gets_the_rest(tmp_path, update
     smallest = LOGO_MIN_COLS
     geoms = {}
     for width in range(60, 151):
-        plain, geom, f = usage_row_at(e, width)
+        plain, geom, f, row = usage_row_at(e, width)
         geoms[width] = geom
         if geom is None:
             # not drawn: even the smallest logo would have clipped Model usage
             beside = testing.render_text(usage_panel(f, width), width - (smallest + LOGO_PANEL_PAD) - 1)[0]
             assert "…" in beside, width
+            # and the reload gate, which tells room by drawing Model usage narrower, agrees
+            assert not cli.logo_left_out_with_room(testing.record_console(width), row, width), width
             continue
         rows, cols = geom
         assert "…" not in plain, width  # Model usage is never clipped for the logo
