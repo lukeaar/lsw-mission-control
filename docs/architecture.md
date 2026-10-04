@@ -25,7 +25,7 @@ lsw-mission-control/
     notes.py              Notes, read_notes, NotesLoader
     agents.py             transcript_facts, scan_agents, final_merge_labels, label_names, findings_of, stored_ok,
                           store_since, FinishedStore, journal_seq, later_attempt, latest_attempts,
-                          latest_by_label, review_needs_fix
+                          latest_by_label, died_after, review_needs_fix
     progress.py           Prog, Calibration, calibrate, JobFile, created_at, job_file, progress_of, stage_begun,
                           eta_from_json, stages_progress, stages_started, wait_for, in_wait_order, item_stages,
                           item_progress, item_active_since, item_started, item_minutes, short_name
@@ -310,9 +310,11 @@ Panels:
   `since` counted for no row, malformed records dropped,
   a running record rewritten at most every 10 min); waits (plan-schema.md, "Waits": every `after:`
   flag, a target listed later, a begun row, a target with no finish time or failed);
-  silence over 25 min means stopped; a failed attempt undoes no attempt that returned or runs,
-  nor hides it from Agents at work; a stage with a label running runs, timed from those not
-  failed, and fails only when none runs; a label's latest attempt (plan-schema.md, "A stage": in
+  silence over 25 min means stopped; a failed attempt undoes no attempt that returned or runs
+  (a held stage reads it all the same, as does a stage whose result is older than an earlier
+  stage's re-run when the death began after it), nor hides it from Agents at work; a stage with
+  a label running runs, timed from its labels at work or returned with no death since, and fails
+  only when none runs; a label's latest attempt (plan-schema.md, "A stage": in
   journal order within a run, a bare label from the run whose attempts began last; every attempt
   kept, one whose key starts again is over, an end event ends the agentId it names; a journal is
   split at `\n` only); the tag row's phases and timing (the median of successful runs, else

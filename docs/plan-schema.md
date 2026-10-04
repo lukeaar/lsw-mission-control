@@ -89,7 +89,8 @@ item is common), so the plan can carry its own explanations.
   `after_server` item, which follows its live job.
 - `after_server: true` (alias `after_live`): the FIRST stage mirrors a plugin's live job (its share
   done, its time left, "stalled", or unknown while the plugin has not answered), so such an item
-  needs at least that stage.
+  needs at least that stage. Held (`paused`), its stages after the job read held, as any held row's
+  do.
 
 ### `next`: `{release, about, items: [{key, name, group, before, build, review, fix, flags}]}`
 
@@ -186,9 +187,17 @@ A **failed** attempt died: an API error the runtime's retries did not get past, 
 past `[agents] silent_stopped_min` (its workflow stopped). That is never a verdict on the work, so it
 never undoes an attempt that returned or still runs: the label reads the latest of those instead
 (in its own run for a run-qualified label, in any run for a bare one), and reads failed only when it
-has none. A stage runs while any of its labels runs, its time counted from its labels that did not
-die (a run at work on a stage normally runs its died agents again); it reads failed, "needs rerun"
-with its whole time again, only when none of its labels runs and one of them failed.
+has none. Two stages read the attempt that died all the same: a held item's (the owner stopped the
+run doing it again: held, not done), and one whose result is older than an earlier stage's latest
+start while the attempt that died began after it (the stage ran again after that re-run and died:
+it needs a re-run, where the stale result alone would leave it queued).
+
+A stage runs while any of its labels runs, timed from this round of it: its labels at work, and
+those that returned with no attempt of them dying since. A died attempt, and a result a later
+attempt of its label died after (a resumed or relaunched run started it again), are an earlier
+round's, so the time since them is no overrun (a run at work on a stage normally runs its died
+agents again). It reads failed, "needs rerun" with its whole time again, only when none of its
+labels runs and one of them failed.
 
 ### The final merge and the tag
 

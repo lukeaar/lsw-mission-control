@@ -345,8 +345,10 @@ def latest_by_label(agents: list[dict], now: float, silent_stopped_s: float) -> 
     workflow): it is never a verdict on the work, which an agent returns as its result. So it never
     undoes an attempt that returned or still runs: where the latest attempt failed, the label reads
     the latest of those (in its own run for a run-qualified label, in any run for a bare one), and
-    it reads failed only when it has none. An agent of an earlier release (FinishedStore.merge marks
-    it) is no row's."""
+    it reads failed only when it has none. That earlier attempt carries the one that died as "died"
+    (died_after()): a stage reads the died one where the earlier one no longer stands (a held item's,
+    or a result older than an earlier stage's re-run; progress._stage_attempt()). An agent of an
+    earlier release (FinishedStore.merge marks it) is no row's."""
     current = []
     for a in agents:
         if a.get("earlier_release"):
@@ -364,14 +366,25 @@ def latest_by_label(agents: list[dict], now: float, silent_stopped_s: float) -> 
     for (_run, label), a in alive.items():
         if label not in alive_any or later_attempt(a, alive_any[label]):
             alive_any[label] = a
+
+    def instead(earlier: dict | None, died: dict) -> dict:
+        return died if earlier is None else dict(earlier, died=died)  # a copy: the agent itself is unchanged
+
     out: dict = {}
     newest_run: dict = {}
     for (run, label), a in latest_attempts(current).items():
-        out[f"{run}/{label}"] = alive.get((run, label), a) if a["status"] == "failed" else a
+        out[f"{run}/{label}"] = instead(alive.get((run, label)), a) if a["status"] == "failed" else a
         if label not in newest_run or began[(run, label)] > newest_run[label]:
             newest_run[label] = began[(run, label)]
-            out[label] = alive_any.get(label, a) if a["status"] == "failed" else a
+            out[label] = instead(alive_any.get(label), a) if a["status"] == "failed" else a
     return out
+
+
+def died_after(label: dict) -> dict | None:
+    """The attempt that died after the one a label reads (latest_by_label sets it), or None; None too
+    when a hand-edited store record holds something else under that name."""
+    died = label.get("died")
+    return died if stored_ok(died) else None
 
 
 def review_needs_fix(review: dict | None) -> bool | None:

@@ -35,18 +35,21 @@ def other_panel(f: Frame, width: int):
         stages = item.stages
         if item.after_server:
             first, rest = stages[0], stages[1:]
+            # Its later stages are held while the owner holds it, as any held row's are: a stopped
+            # re-run is held, never undone by the result before it (stages_progress, `paused`).
+            held = item.paused
             if f.live_job_error:
                 # The plugin behind this row failed: say so, never read it as "not reached yet".
-                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share)
+                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, paused=held)
                 p.marks = [("✕", C.RED_SOFT)] + p.marks
                 p.remaining, p.current, p.waiting, p.alert = None, "plugin error", False, True
             elif job is None:
                 # Never reached (or switched off): the job's state and its time are unknown.
-                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share)
+                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, paused=held)
                 p.marks = [("○", C.FAINT)] + p.marks
                 p.remaining, p.current, p.waiting = None, f"{first[0]}?", True
             elif job.left == 0:
-                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share)
+                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, paused=held)
                 p.marks = [("●", C.GREEN)] + p.marks
             else:
                 # The job's own progress (its share of the queue) counts as work done; the time it
@@ -55,7 +58,7 @@ def other_panel(f: Frame, width: int):
                 frac = min(job.frac, 0.999)
                 done_before = frac / (1 - frac) * (eta or 0.0)
                 p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, wait_before=eta or 0.0,
-                                    done_before=done_before)
+                                    done_before=done_before, paused=held)
                 if p.current == "done":
                     # Every later stage is behind it (they ran early): the job's own time is what is
                     # left. stages_progress() reads a row with nothing left as done, dropping the wait.

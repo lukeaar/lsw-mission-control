@@ -7,7 +7,10 @@ journal order:
 - an attempt begun after a result runs again;
 - an attempt that died (a "failed" or "error" event, or silent past the stop limit: its workflow
   stopped) never undoes a result or an attempt still running: the label reads the latest of those,
-  and fails only when it has none.
+  and fails only when it has none;
+- the attempt that died rides along on that earlier one, and a stage reads it where the earlier one
+  no longer stands: in a held item (the owner stopped it), and for a result older than an earlier
+  stage's re-run when the death came after that re-run (the stage ran again and died).
 
 The bugs they pin: the stage of a label whose retry returned read ✕ "needs rerun". The finished
 store still held the killed attempt as running, and the attempts were ordered by their transcripts'
@@ -28,6 +31,7 @@ import pytest
 from lsw_mission_control import testing
 from lsw_mission_control.agents import (
     FinishedStore,
+    died_after,
     final_merge_labels,
     label_names,
     latest_attempts,
@@ -44,7 +48,7 @@ from lsw_mission_control.render.other import other_panel
 from lsw_mission_control.render.release import release_panel
 
 from conftest import NOW
-from scenarios import HOUR, MIN, Project, ts
+from scenarios import HOUR, MIN, STUB_PLUGIN, Project, ts
 
 RUN = "wf_retry-a"
 LABEL = "measure:cost"
@@ -592,3 +596,268 @@ def test_next_rows_after_the_outage(tmp_path):
     assert "●─●─●" in index and "done" in index and "needs rerun" not in index
     assert "●─●─◉" in icons and "fix" in icons and "needs rerun" not in icons and "~10m · 14:23" in icons
     assert "✕─○" in bench and "needs rerun" in bench
+
+
+# ── a died attempt after an earlier stage ran again; a held item's stopped re-run; a running stage's time ──
+# The label reads the earlier attempt, carrying the one that died (died_after): a stage reads that
+# one where the earlier one no longer stands (progress._stage_attempt).
+BRF = [("build", "build:x", 60), ("review", "review:x", 20), ("fix", "fix:x", 30)]
+MAJOR = {"findings": [{"severity": "major"}]}
+
+
+def two_rounds(projects: Path, *, second_fix: str = "failed", one_run: bool = True) -> None:
+    """build, review (a major finding) and fix all returned; a second review returned (major again);
+    the second fix then died ("failed") or went silent ("silent"), and nothing of the item runs."""
+    r1 = Journal(projects, run="wf_round1")
+    r1.start("b1", NOW - 5 * HOUR, NOW - 4.5 * HOUR, label="build:x", key="kb").end("result", "b1", key="kb")
+    r1.start("r1", NOW - 4.4 * HOUR, NOW - 4 * HOUR, label="review:x", key="kr1").end("result", "r1", key="kr1", result=MAJOR)
+    r1.start("f1", NOW - 3.9 * HOUR, NOW - 3.5 * HOUR, label="fix:x", key="kf1").end("result", "f1", key="kf1")
+    r2 = r1 if one_run else Journal(projects, run="wf_round2")
+    r2.start("r2", NOW - 3 * HOUR, NOW - 2.5 * HOUR, label="review:x", key="kr2").end("result", "r2", key="kr2", result=MAJOR)
+    died(r2, "f2", second_fix, NOW - 2 * HOUR, NOW - 1.9 * HOUR, label="fix:x", key="kf2")
+    r1.write()
+    if r2 is not r1:
+        r2.write()
+
+
+@pytest.mark.parametrize("how", ["failed", "silent"])
+@pytest.mark.parametrize("one_run", [True, False], ids=["one run", "two runs"])
+def test_a_fix_whose_second_round_died_after_a_rereview_needs_a_rerun(tmp_path, one_run, how):
+    """the fix's only attempt since the review ran again died, and nothing runs: it needs a re-run.
+    Its result from before that review is stale, and alone it read "queued", with no failure counted"""
+    two_rounds(tmp_path, second_fix=how, one_run=one_run)
+    labels = latest_by_label(scan_agents(tmp_path, NOW), NOW, SILENT)
+    p = stages_progress(BRF, labels, now=NOW, cal=None, default_fix_share=0.7)
+    assert [m[0] for m in p.marks] == ["●", "●", "✕"], (p.marks, p.current)
+    assert p.failed and p.current == "fix failed"
+
+
+def test_the_release_row_and_header_count_that_died_fix(tmp_path):
+    p = Project(tmp_path)
+    p.plan({"release": "1.0.0", "items": [{"name": "Search index", "key": "x", "build": 60, "review": 20, "fix": 30}]})
+    p.notes()
+    two_rounds(p.projects)
+    plain = release_text(p)
+    row = row_of(plain, "Search index")
+    assert "●─●─✕" in row and "needs rerun" in row and "1 failed" in plain, row
+
+
+def check_stage(projects: Path, *, check_b_runs: bool) -> None:
+    """check-a returned; measure ran again; check-a's attempt after that died. check-b's attempt
+    after it returned, or (`check_b_runs`) runs now."""
+    j = Journal(projects, run="wf_r")
+    j.start("m1", NOW - 6 * HOUR, NOW - 5.5 * HOUR, label="measure:x", key="km1").end("result", "m1", key="km1")
+    j.start("a1", NOW - 5 * HOUR, NOW - 4.5 * HOUR, label="check-a:x", key="ka1").end("result", "a1", key="ka1")
+    j.start("m2", NOW - 3 * HOUR, NOW - 2.5 * HOUR, label="measure:x", key="km2").end("result", "m2", key="km2")
+    died(j, "a2", "failed", NOW - 2 * HOUR, NOW - 1.9 * HOUR, label="check-a:x", key="ka2")
+    if check_b_runs:
+        j.start("c2", NOW - 20 * MIN, NOW - 30, label="check-b:x", key="kc2")
+    else:
+        j.start("c2", NOW - 2 * HOUR, NOW - 1.5 * HOUR, label="check-b:x", key="kc2").end("result", "c2", key="kc2")
+    j.write()
+
+
+CHECK = [("measure", "measure:x", 60), ("check", ["check-a:x", "check-b:x"], 30)]
+
+
+def test_a_multi_label_stage_with_a_stale_result_and_a_died_retry_is_not_done(tmp_path):
+    """nothing runs, and check-a's only result is older than measure's re-run: the stage needs a
+    re-run (it read done)"""
+    check_stage(tmp_path, check_b_runs=False)
+    labels = latest_by_label(scan_agents(tmp_path, NOW), NOW, SILENT)
+    p = stages_progress(CHECK, labels, now=NOW, cal=None, default_fix_share=0.7)
+    assert p.current != "done" and p.failed, (p.marks, p.current)
+    assert [m[0] for m in p.marks] == ["●", "✕"] and p.current == "check failed"
+
+
+def test_that_stage_runs_while_another_of_its_labels_runs(tmp_path):
+    """the same with check-b at work (the run at work on the stage runs check-a again): it runs, never
+    fails, timed from check-b (30 min planned, 20 run: at least 10 min left)"""
+    check_stage(tmp_path, check_b_runs=True)
+    labels = latest_by_label(scan_agents(tmp_path, NOW), NOW, SILENT)
+    p = stages_progress(CHECK, labels, now=NOW, cal=None, default_fix_share=0.7)
+    assert not p.failed and p.current == "check" and [m[0] for m in p.marks] == ["●", "◉"]
+    assert p.over == 0 and p.remaining == 10 * 60
+
+
+def test_a_paused_item_whose_rerun_was_stopped_stays_paused(tmp_path):
+    """the owner held the item while its fix ran again, and the run stopped: the fix is held (it read
+    done, and the item left the release as finished)"""
+    p = Project(tmp_path)
+    p.plan({"release": "1.0.0", "items": [
+        {"name": "Search index", "key": "x", "build": 60, "review": 20, "fix": 30, "paused": True}]})
+    p.notes()
+    j = Journal(p.projects, run="wf_x")
+    j.start("b1", NOW - 5 * HOUR, NOW - 4.5 * HOUR, label="build:x", key="kb").end("result", "b1", key="kb")
+    j.start("r1", NOW - 4.4 * HOUR, NOW - 4 * HOUR, label="review:x", key="kr").end("result", "r1", key="kr", result=MAJOR)
+    j.start("f1", NOW - 3.9 * HOUR, NOW - 3.5 * HOUR, label="fix:x", key="kf").end("result", "f1", key="kf")
+    died(j, "f2", "silent", NOW - HOUR, NOW - 50 * MIN, label="fix:x", key="kf2")  # a fix re-run; held, its run stopped
+    j.write()
+    plain = release_text(p)
+    assert "1 paused" in plain and "1/1 items ready" not in plain, plain
+    assert "●─●─◉" in row_of(plain, "Search index")
+
+
+def test_a_paused_other_row_whose_rerun_was_stopped_stays_paused(tmp_path):
+    p = Project(tmp_path)
+    p.plan({"release": "1.0.0", "items": [], "other": [
+        {"name": "Cost model", "stages": [["measure", LABEL, 60], ["report", "report:cost", 20]], "paused": True}]})
+    p.notes()
+    j = Journal(p.projects)
+    j.start("a1", NOW - 3 * HOUR, NOW - 2 * HOUR).end("result", "a1")
+    j.start("r1", NOW - 2 * HOUR, NOW - 1.5 * HOUR, label="report:cost", key="k2").end("result", "r1", key="k2")
+    died(j, "r2", "silent", NOW - HOUR, NOW - 50 * MIN, label="report:cost", key="k2")
+    j.write()
+    plain = other_text(p)
+    row = row_of(plain, "Cost model")
+    assert "1 paused" in plain and "●─◉" in row and "paused" in row and "done" not in row
+
+
+@pytest.mark.parametrize("job, lead", [("done", "●"), ("running", "◉"), ("unknown", "○")])
+def test_a_paused_row_after_a_live_job_holds_its_later_stages(tmp_path, job, lead):
+    """a held row that follows a plugin's live job (after_server): its later stages read held, as any
+    held row's do (a stage that died read ✕ there), so a stopped re-run is held, never done"""
+    p = Project(tmp_path)
+    p.write_config(f"""
+        [plan]
+        after_server = "stub"
+
+        [[plugins]]
+        name = "stub"
+        file = "{STUB_PLUGIN}"
+        class = "StubPlugin"
+
+        [plugins.options]
+        host = "stubhost"
+        """)
+    p.plan({"release": "1.0.0", "items": [], "other": [
+        {"name": "Nightly data import", "after_server": True, "paused": True,
+         "stages": [["import", None, 0], ["verify", "verify:import", 30]]}]})
+    p.notes()
+    p.plugin_state = {"job": job}
+    j = Journal(p.projects)
+    j.start("v1", NOW - 3 * HOUR, NOW - 2.5 * HOUR, label="verify:import").end("result", "v1")
+    died(j, "v2", "silent", NOW - HOUR, NOW - 50 * MIN, label="verify:import")
+    j.write()
+    plain = other_text(p)
+    row = row_of(plain, "Nightly data import")
+    assert "1 paused" in plain and f"{lead}─◉" in row and "paused" in row, plain
+
+
+def test_a_running_stage_is_not_timed_from_an_earlier_runs_result(tmp_path):
+    """research returned in run one; a relaunch ran it again and that attempt died; run three runs
+    questions now (20 min in). The stage runs from this round: the hours since research's result (the
+    outage) are no overrun (it read "+4h30")"""
+    one = Journal(tmp_path, run="wf_one")
+    one.start("r1", NOW - 6 * HOUR, NOW - 5.5 * HOUR, label="research:x", key="kr").end("result", "r1", key="kr")
+    one.write()
+    two = Journal(tmp_path, run="wf_two")
+    died(two, "r2", "failed", NOW - HOUR, NOW - 55 * MIN, label="research:x", key="kr")
+    two.write()
+    three = Journal(tmp_path, run="wf_three")
+    three.start("q1", NOW - 20 * MIN, NOW - 30, label="questions:x", key="kq")
+    three.write()
+    labels = latest_by_label(scan_agents(tmp_path, NOW), NOW, SILENT)
+    p = stages_progress([("facts", ["research:x", "questions:x"], 90), ("build", "build:x", 60)], labels,
+                        now=NOW, cal=None, default_fix_share=0.7)
+    assert not p.failed and p.current == "facts"
+    assert p.over == 0, f"over {p.over / 60:.0f} min, remaining {p.remaining / 60:.0f} min"
+    assert p.remaining == (70 + 60) * 60
+
+
+def test_a_label_that_reads_an_earlier_attempt_carries_the_one_that_died(tmp_path):
+    """the attempt that died rides on a copy (the agent itself is unchanged), and a label whose latest
+    attempt did not die carries none"""
+    j = Journal(tmp_path)
+    j.start("a1", NOW - 3 * HOUR, NOW - 2 * HOUR).end("result", "a1")
+    died(j, "a2", "silent", NOW - HOUR, NOW - 50 * MIN)
+    j.start("b1", NOW - 3 * HOUR, NOW - 2 * HOUR, label="review:cost", key="k2").end("result", "b1", key="k2")
+    j.write()
+    agents = scan_agents(tmp_path, NOW)
+    labels = latest_by_label(agents, NOW, SILENT)
+    for name in (LABEL, f"{RUN}/{LABEL}"):
+        assert labels[name]["id"] == "a1" and died_after(labels[name])["id"] == "a2"
+        assert died_after(labels[name])["status"] == "failed"  # silent past the stop limit
+    assert died_after(labels["review:cost"]) is None and all("died" not in a for a in agents)
+
+
+# ── shapes that hold ────────────────────────────────────────────────────────────────────────────
+def test_death_success_death_in_one_run_and_across_runs(tmp_path):
+    j = Journal(tmp_path / "one", run="wf_a")
+    died(j, "d1", "failed", NOW - 4 * HOUR, NOW - 3.9 * HOUR, label="build:x", key="k")
+    j.start("s1", NOW - 3.8 * HOUR, NOW - 3 * HOUR, label="build:x", key="k").end("result", "s1", key="k")
+    died(j, "d2", "error", NOW - HOUR, NOW - 55 * MIN, label="build:x", key="k")
+    j.write()
+    labels = latest_by_label(scan_agents(tmp_path / "one", NOW), NOW, SILENT)
+    assert labels["build:x"]["id"] == "s1" and labels["wf_a/build:x"]["id"] == "s1"
+    across = tmp_path / "across"
+    a = Journal(across, run="wf_a")
+    died(a, "d1", "failed", NOW - 4 * HOUR, NOW - 3.9 * HOUR, label="build:x", key="k")
+    a.write()
+    b = Journal(across, run="wf_b")
+    b.start("s1", NOW - 3.8 * HOUR, NOW - 3 * HOUR, label="build:x", key="k").end("result", "s1", key="k")
+    b.write()
+    c = Journal(across, run="wf_c")
+    died(c, "d2", "failed", NOW - HOUR, NOW - 55 * MIN, label="build:x", key="k")
+    c.write()
+    labels = latest_by_label(scan_agents(across, NOW), NOW, SILENT)
+    assert labels["build:x"]["id"] == "s1" and labels["wf_c/build:x"]["status"] == "failed"
+    assert labels["wf_a/build:x"]["status"] == "failed" and labels["wf_b/build:x"]["id"] == "s1"
+
+
+def test_a_label_in_two_runs_at_once(tmp_path):
+    """the old run still works on it; the new run's attempt of it died: the label runs, the row runs,
+    and Agents at work lists the old run's agent"""
+    p = Project(tmp_path)
+    p.plan({"release": "1.0.0", "items": [], "other": [{"name": "Cost model", "stages": [["measure", "measure:x", 180]]}]})
+    p.notes()
+    old = Journal(p.projects, run="wf_old")
+    old.start("o1", NOW - 2 * HOUR, NOW - 30, label="measure:x", key="k")
+    old.write()
+    new = Journal(p.projects, run="wf_new")
+    died(new, "n1", "failed", NOW - HOUR, NOW - 55 * MIN, label="measure:x", key="k")
+    new.write()
+    f = p.engine().build_frame(120)
+    assert f.labels["measure:x"]["id"] == "o1" and f.labels["measure:x"]["status"] == "running"
+    other = testing.render_text(other_panel(f, 120), 120)[0]
+    row = row_of(other, "Cost model")
+    assert "measure" in row and "needs rerun" not in row and "failed" not in other
+    at_work = testing.render_text(agents_panel(f, 120, []), 120)[0]
+    assert "1 running" in at_work and "measure:x" in at_work
+
+
+def test_a_stage_whose_only_label_died_while_another_workflow_runs_a_later_stage(tmp_path):
+    """measure died in the old run; a new run is at work on report: measure needs a re-run, the
+    header counts it, and the row reads needs rerun"""
+    p = Project(tmp_path)
+    p.plan({"release": "1.0.0", "items": [], "other": [
+        {"name": "Cost model", "stages": [["measure", "measure:x", 60], ["report", "report:x", 30]]}]})
+    p.notes()
+    old = Journal(p.projects, run="wf_old")
+    died(old, "m1", "failed", NOW - 2 * HOUR, NOW - 1.9 * HOUR, label="measure:x", key="k")
+    old.write()
+    new = Journal(p.projects, run="wf_new")
+    new.start("r1", NOW - 20 * MIN, NOW - 30, label="report:x", key="k")
+    new.write()
+    other = other_text(p)
+    row = row_of(other, "Cost model")
+    assert "✕─◉" in row and "needs rerun" in row and "1 failed" in other
+
+
+def test_a_genuinely_failed_multi_label_stage_across_runs(tmp_path):
+    """every attempt of every label died, in two runs, silent and failed, and nothing runs"""
+    p = Project(tmp_path)
+    p.plan({"release": "1.0.0", "items": [
+        {"name": "Export", "key": "e", "build": 60, "review": 20, "fix": 30,
+         "before": [["facts", ["research:e", "critic:e"], 90]]}]})
+    p.notes()
+    old = Journal(p.projects, run="wf_old")
+    died(old, "o1", "failed", NOW - 5 * HOUR, NOW - 4.9 * HOUR, label="research:e", key="k1")
+    died(old, "o2", "error", NOW - 4.8 * HOUR, NOW - 4.7 * HOUR, label="critic:e", key="k2")
+    old.write()
+    new = Journal(p.projects, run="wf_new")
+    died(new, "n1", "silent", NOW - 2 * HOUR, NOW - 1.5 * HOUR, label="research:e", key="k1")  # silent past the stop limit
+    new.write()
+    plain = release_text(p)
+    row = row_of(plain, "Export")
+    assert "✕─○─○─○" in row and "needs rerun" in row and "1 failed" in plain

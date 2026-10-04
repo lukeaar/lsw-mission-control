@@ -104,6 +104,53 @@ def test_a_stage_with_a_label_that_died_and_none_running_needs_a_rerun():
         assert p.remaining == (90 + 60) * 60
 
 
+def standing_in(label, t0, t1, died_t0):
+    """A label that reads a result because its latest attempt, begun at `died_t0`, died after it: that
+    attempt rides along as "died" (latest_by_label)."""
+    return dict(a(label, "done", t0, t1), died=a(label, "failed", died_t0, died_t0 + 6 * MIN))
+
+
+def test_a_result_older_than_an_earlier_stages_rerun_reads_the_attempt_that_died_after_it():
+    """the review ran again at -3h. The fix's attempt after that died: it needs a re-run (its stale
+    result alone left it queued). Died before that too: stale, queued after the review, as it was. A
+    result after the review: the death undoes nothing"""
+    build = a("build:x", "done", NOW - 5 * HOUR, NOW - 4.5 * HOUR)
+    review = a("review:x", "done", NOW - 3 * HOUR, NOW - 2.5 * HOUR, findings=[{"severity": "major"}])
+    for fix, marks, current in (
+            (standing_in("fix:x", NOW - 3.9 * HOUR, NOW - 3.5 * HOUR, NOW - 2 * HOUR), "●●✕", "fix failed"),
+            (standing_in("fix:x", NOW - 3.9 * HOUR, NOW - 3.5 * HOUR, NOW - 3.2 * HOUR), "●●○", "queued"),
+            (standing_in("fix:x", NOW - 2.4 * HOUR, NOW - 2.2 * HOUR, NOW - 2 * HOUR), "●●●", "done")):
+        p = sp(STAGES, {"build:x": build, "review:x": review, "fix:x": fix})
+        assert "".join(m[0] for m in p.marks) == marks and p.current == current and p.failed == (marks[-1] == "✕")
+        assert p.remaining == (0 if current == "done" else 30 * 60)  # a re-run, or queued after a major finding
+
+
+def test_a_held_stage_reads_the_attempt_that_died_after_its_result():
+    """the owner held the item while that attempt ran: held, never done"""
+    labels = {"build:x": standing_in("build:x", NOW - 3 * HOUR, NOW - 2 * HOUR, NOW - HOUR)}
+    p = sp(STAGES, labels)
+    assert p.marks[0][0] == "●" and p.current == "queued"  # not held: its result stands
+    p = sp(STAGES, labels, paused=True)
+    assert p.marks[0][0] == "◉" and p.current == "build" and not p.failed
+
+
+def test_a_result_a_later_attempt_died_after_does_not_time_a_running_stage():
+    """a resumed or relaunched run started it again after it returned: that result is an earlier
+    round's, and the hours since it are no overrun (a result with nothing dying after it still times
+    the stage: above, from the first of them to start)"""
+    labels = {"research:x": standing_in("research:x", NOW - 6 * HOUR, NOW - 5.5 * HOUR, NOW - HOUR),
+              "questions:x": a("questions:x", "running", NOW - 20 * MIN, NOW - 30)}
+    p = sp(FACTS, labels)
+    assert not p.failed and p.current == "facts" and p.over == 0 and p.remaining == (70 + 60) * 60
+
+
+def test_a_died_entry_that_is_no_attempt_is_ignored():
+    """a hand-edited store record can hold anything there: no attempt, and nothing breaks"""
+    for bad in ("x", 3, None, {"id": "x"}, {"id": "x", "label": "build:x", "run": "wf", "status": "lost"}):
+        labels = {"build:x": dict(a("build:x", "done", NOW - 2 * HOUR, NOW - HOUR), died=bad)}
+        assert sp(STAGES, labels).marks[0][0] == "●" and sp(STAGES, labels, paused=True).marks[0][0] == "●"
+
+
 def test_done_and_fix_not_needed():
     labels = {"build:x": a("build:x", t0=NOW - 3000, t1=NOW - 2000),
               "review:x": a("review:x", t0=NOW - 1900, t1=NOW - 1000, findings=[{"severity": "nit"}])}

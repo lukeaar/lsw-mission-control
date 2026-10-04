@@ -11,7 +11,7 @@ import math
 import os
 from typing import TYPE_CHECKING, Callable, NamedTuple, Sequence
 
-from lsw_mission_control.agents import review_needs_fix
+from lsw_mission_control.agents import died_after, review_needs_fix
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import iso
 
@@ -209,6 +209,20 @@ def eta_from_json(path: str | None, key: str, now: float) -> float | None:
         return None
 
 
+def _stage_attempt(label: dict, paused: bool, prev_start: float) -> dict:
+    """The attempt a stage reads of one of its labels: the one latest_by_label chose, unless that one
+    stands in for a later attempt that died (died_after) and no longer stands itself. In a held item
+    the attempt that died is read: the owner holds the run that was doing it again, so the stage is
+    held, never done. And a result older than an earlier stage's latest start reads the attempt that
+    died when that one began at or after it: the stage ran again after that re-run and died, so it
+    needs a re-run, where the stale result alone would leave it queued."""
+    died = died_after(label)
+    if died is not None and (paused or (label["status"] == "done"
+                                        and (label["t0"] or 0) < prev_start <= (died["t0"] or 0))):
+        return died
+    return label
+
+
 def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibration | None, default_fix_share: float,
                     wait_before: float | None = 0.0, after: str = "", done_before: float = 0.0,
                     paused: bool = False) -> Prog:
@@ -292,7 +306,7 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
         if not specs and later_started:
             marks.append(("●", C.GREEN))  # no agent of its own, and the work after it has begun
             continue
-        found = [labels[x] for x in specs if x in labels]
+        found = [_stage_attempt(labels[x], paused, prev_start) for x in specs if x in labels]
         latest = max(((a["t0"] or 0) for a in found), default=0.0)
         if found and prev_start and latest < prev_start:
             found = []  # it ran before an earlier stage was re-run, so it must run again
@@ -334,8 +348,11 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
             remaining += minutes * 60  # a re-run
             current = f"{name} failed"
             continue
-        # Running: its time counts from its labels that did not die (a died attempt is an earlier run's).
-        started = min((a["t0"] or now) for a in found if a["status"] != "failed")
+        # Running: timed from this round of it, its labels at work or returned with no attempt of them
+        # dying since. A died attempt, and a result a later attempt of its label died after (a resumed
+        # or relaunched run started it again), are an earlier round's: their starts are no overrun.
+        this_round = [a for a in found if a["status"] == "running" or (a["status"] == "done" and died_after(a) is None)]
+        started = min((a["t0"] or now) for a in (this_round or [a for a in found if a["status"] != "failed"]))
         elapsed = now - started
         left = minutes * 60 - elapsed
         # Overrun: past the plan AND the calibrated estimate, so a stage within its plan is no alarm.

@@ -111,12 +111,18 @@ Fixed before the first release:
   silent past `silent_stopped_min` (its workflow stopped), never as a verdict on its work. Now a
   failed attempt never undoes an attempt of its label that returned or still runs: the label reads
   the latest of those (a later result still replaces an earlier one; a run-qualified label in its
-  own run, a bare one in any run), and fails only when it has none. Agents at work no longer hides
-  an agent at work behind a later attempt of its label that died. A stage runs while any of its
-  labels runs, timed from the labels that did not fail (their earlier starts are not an overrun),
-  and reads failed, "needs rerun" with its whole time again, only when none of them runs and one
-  failed, as before. The release's finish and the calibration follow: a stage that returned before
-  its retry died is done, in the time it took.
+  own run, a bare one in any run), and fails only when it has none. Two stages still read the
+  attempt that died: a held item's, whose stopped re-run is held, never done; and one whose result
+  is older than an earlier stage's re-run while the attempt that died began after that re-run (the
+  stage ran again and died, so it needs a re-run; its stale result alone would read "queued").
+  Agents at work no longer hides an agent at work behind a later attempt of its label that died. A
+  stage runs while any of its labels runs, timed from this round of it: its labels at work, and
+  those that returned with no attempt of them dying since. A died attempt, and a result a later
+  attempt died after, are an earlier round's, so the outage since them is no overrun. It reads
+  failed, "needs rerun" with its whole time again, only when none of them runs and one failed, as
+  before. The release's finish and the calibration follow: a stage that returned before its retry
+  died is done, in the time it took. A held row that follows a plugin's live job (`after_server`)
+  reads its later stages as held, as every other held row does; a stage of it that died read ✕.
 
 - A detached job's stage (`{"progress", "total"}`) runs from the moment its progress file exists,
   even empty: it read "queued 0%" until its first unit finished, hours into a long job. It reads
