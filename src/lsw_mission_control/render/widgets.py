@@ -193,7 +193,8 @@ def legend_line() -> Text:
 def milestone_row(t: Table, name: str, name_style: str, stages, m: dict, bar_w: int, finish_word: str,
                   finish_style: str) -> None:
     """The last two rows show when each starts, how long it takes and when it finishes (never a
-    running total); once started, since when and the time left; once done, when it finished."""
+    running total); once started, since when and the time left (`≥` once past its estimate,
+    m["over"] > 0, as a work row reads it); once done, when it finished."""
     t_now = now()
     label = Text(name, style=name_style)
     if m["status"] == "done":
@@ -208,7 +209,8 @@ def milestone_row(t: Table, name: str, name_style: str, stages, m: dict, bar_w: 
         t.add_row(label, stages, Text(f"since {clock(m['start'])}", style=C.MUTED),
                   bar(m["fraction"], bar_w, col) + Text(f" {m['fraction'] * 100:3.0f}%", style=C.MUTED),
                   Text("needs rerun", style=f"bold {C.RED_SOFT}") if failed
-                  else Text(f"~{human(m['end'] - t_now)} · {clock(m['end'])}", style=col))
+                  else Text(f"{'≥' if m.get('over', 0.0) > 0 else '~'}{human(m['end'] - t_now)} · {clock(m['end'])}",
+                            style=col))
     else:
         starts = "from now" if m["start"] <= t_now + 60 else f"from {clock(m['start'])}"
         t.add_row(label, stages, Text(starts, style=C.MUTED), Text(f"takes ~{human(m['dur'])}", style=C.MUTED),

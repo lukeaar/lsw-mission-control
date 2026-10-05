@@ -36,44 +36,62 @@ if TYPE_CHECKING:
     from lsw_mission_control.engine import Frame
 
 
+def run_left(t0: float, minutes: float, t_now: float) -> tuple[float, float]:
+    """(time left, seconds past its median) of a GitHub run created at `t0`, whose workflow's past
+    runs took `minutes` (their median). Within the median, what is left of it, at least a minute.
+    Past it, as a stage past its estimate has (stages_progress), at least 10 min, or a quarter of its
+    time so far: a lower bound, read with `≥`. (It was a minute from now for as long as the run went on.)"""
+    elapsed = t_now - t0
+    over = elapsed - minutes * 60
+    if over > 0:
+        return max(10 * 60, 0.25 * elapsed), over
+    return max(60.0, -over), 0.0
+
+
 def tag_milestone(g: dict, merge_end: float, merge_done: bool, ci_min: float, rel_min: float, hands_min: float) -> dict:
     """Tag + release run, from GitHub: CI on the remote main's HEAD (once the final merge is
     done), the release tag, and the release run for it. Not started: it starts when the merge
-    is done."""
+    is done. `over`: seconds the running CI or release run is past its median (its time left is
+    then a lower bound)."""
     t_now = now()
     hands = hands_min * 60
     dur = (ci_min + rel_min) * 60 + hands
     rel, ci, tagged = g.get("rel"), g.get("ci"), g.get("tag")
     start = max(merge_end, t_now)
     todo = {"status": "todo", "start": start, "end": start + dur, "dur": dur, "fraction": 0.0, "phase": ""}
+    r0 = iso(rel["createdAt"]) if rel else None
     ci_t0 = iso(ci["createdAt"]) if ci else None
-    ci_counts = ci is not None and bool(tagged or rel or (merge_done and ci_t0 >= merge_end - 300))
+    # Main's CI created after the release run is a later commit's (main moved on after the tag), never the release's.
+    ci_counts = ci is not None and (r0 is None or ci_t0 <= r0) and bool(
+        tagged or rel or (merge_done and ci_t0 >= merge_end - 300))
     if not (rel or tagged or ci_counts):
         return todo
     # Tagged with neither run listed yet: it began when the merge finished (not 'now', which slides).
-    start = ci_t0 if ci_counts else iso(rel["createdAt"]) if rel else merge_end if merge_done else t_now
+    start = ci_t0 if ci_counts else r0 if rel else merge_end if merge_done else t_now
     queued = ("queued", "waiting", "pending", "requested")
+    over = 0.0
     if rel:
-        r0 = iso(rel["createdAt"])
         if rel.get("status") == "completed":
             if rel.get("conclusion") == "success":
                 return {"status": "done", "start": start, "end": iso(rel["updatedAt"]), "fraction": 1.0,
                         "phase": "released"}
             return {"status": "failed", "start": start, "end": t_now + rel_min * 60, "phase": "release failed",
                     "fraction": (t_now - start) / max(1.0, t_now - start + rel_min * 60)}
-        end = max(t_now + 60, r0 + rel_min * 60)
+        left, over = run_left(r0, rel_min, t_now)
+        end = t_now + left
         phase = "release queued" if rel.get("status") in queued else "release running"
     elif tagged:
         end, phase = t_now + rel_min * 60, "tagged"
     elif ci.get("status") != "completed":
-        end = max(t_now + 60, ci_t0 + ci_min * 60) + hands + rel_min * 60
+        left, over = run_left(ci_t0, ci_min, t_now)
+        end = t_now + left + hands + rel_min * 60
         phase = "CI queued" if ci.get("status") in queued else "CI running"
     elif ci.get("conclusion") == "success":
         end, phase = t_now + hands + rel_min * 60, "CI ✓ · tag next"
     else:
         return {"status": "failed", "start": start, "end": t_now + dur, "phase": "CI failed",
                 "fraction": (t_now - start) / max(1.0, t_now - start + dur)}
-    return {"status": "running", "start": start, "end": end, "phase": phase,
+    return {"status": "running", "start": start, "end": end, "phase": phase, "over": over,
             "fraction": (t_now - start) / max(1.0, end - start)}
 
 
@@ -196,7 +214,9 @@ def release_panel(f: Frame, width: int):
     if released:
         phrases.append(Text.assemble((f"{words['released']} ", C.GREEN), (clock(release_at), f"bold {C.GREEN}")))
     else:
+        # A run past its median makes the release's finish a lower bound, as the tag row reads it.
+        at_least = "≥" if tag.get("over", 0.0) > 0 else ""
         phrases.append(Text.assemble((f"{words['out']} ", C.MUTED), (clock(release_at), f"bold {C.TEXT}"),
-                                     (f" (in {human(release_at - t_now)})", C.FAINT)))
+                                     (f" (in {at_least}{human(release_at - t_now)})", C.FAINT)))
     head = pack(phrases, width - 4, indent=METER_W + 1)
     return panel(Group(head, Text(""), t), rc.title.format(release=plan.release)), release_at

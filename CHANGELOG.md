@@ -92,6 +92,15 @@ Fixed before the first release:
   header counts as before, and the columns are sized as before, by every item, finished or not, so
   an item that finishes changes no other row's columns.
 
+- The tag row reads a run past its median as a lower bound, and main's CI from a commit pushed after
+  the tag no longer starts it. A release run still going past the median of past runs read a minute
+  left (`~59s`), and the header `release out … (in 1m)`, for as long as it ran: its end was always a
+  minute from now. Past its median a run (the release run, or CI on main) now has at least 10 min
+  left, or a quarter of its time so far, as a stage past its estimate has, and the row reads
+  `≥17m · 14:30` and the header `(in ≥17m)`; within the median nothing changes. A push to main after
+  the tag started CI that the row took for the release's (`since` that push): main's CI created
+  after the release run is a later commit's, so the row starts no later than the release run.
+
 - A journal line whose result holds U+2028, U+2029 or U+0085 is read whole. The journal was split
   with `str.splitlines()`, which splits at those characters too, so the line with an agent's
   result was lost, and the finished agent read as running, then failed ("needs rerun"). A journal

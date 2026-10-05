@@ -45,6 +45,10 @@ TAG_PHASES = {
                                       "updatedAt": ts(NOW - 12 * MIN)}},
     "release-failed": {"tag": True, "rel": {"status": "completed", "conclusion": "failure", "createdAt": ts(NOW - 30 * MIN),
                                             "updatedAt": ts(NOW - 12 * MIN)}},
+    # past the median of past runs; main's CI began after the release run (a push after the tag)
+    "release-overdue": {"tag": True, "ci": {"status": "in_progress", "createdAt": ts(NOW - 30 * MIN)},
+                        "rel": {"status": "in_progress", "createdAt": ts(NOW - 70 * MIN)}},
+    "ci-overdue": {"ci": {"status": "in_progress", "createdAt": ts(NOW - 40 * MIN)}},
 }
 
 
@@ -148,6 +152,88 @@ def test_the_tag_row_reads_mains_ci_only_after_the_final_merge(merge_done):
     m = tag_milestone({"ci": ci}, NOW - HOUR, merge_done, 18.0, 9.0, 20.0)
     assert m["status"] == ("running" if merge_done else "todo")
     assert m.get("phase", "") == ("CI running" if merge_done else "")
+
+
+def test_mains_ci_begun_after_the_release_run_never_starts_the_tag_row():
+    """The bug: the tag's release run was created first, then a push to main started CI on main's new
+    HEAD, and the row read "since" that CI run: the start was main's CI whatever its time. A CI run
+    created after the release run is a later commit's, never the release's: the row starts no later
+    than the release run. The release commit's own CI, begun before the release run, still starts it."""
+    from lsw_mission_control.render.release import tag_milestone
+
+    later_ci = {"status": "in_progress", "createdAt": ts(NOW - 30 * MIN)}
+    own_ci = {"status": "completed", "conclusion": "success", "createdAt": ts(NOW - 90 * MIN)}
+    running = {"status": "in_progress", "createdAt": ts(NOW - 70 * MIN)}
+    released = {"status": "completed", "conclusion": "success", "createdAt": ts(NOW - 70 * MIN),
+                "updatedAt": ts(NOW - 5 * MIN)}
+    for rel in (running, released):
+        m = tag_milestone({"tag": True, "ci": later_ci, "rel": rel}, NOW - 2 * HOUR, True, 18.0, 9.0, 20.0)
+        assert m["start"] == NOW - 70 * MIN
+        m = tag_milestone({"tag": True, "ci": own_ci, "rel": rel}, NOW - 2 * HOUR, True, 18.0, 9.0, 20.0)
+        assert m["start"] == NOW - 90 * MIN
+    # no release run listed yet: main's CI still starts the row, as before
+    m = tag_milestone({"tag": True, "ci": later_ci}, NOW - 2 * HOUR, True, 18.0, 9.0, 20.0)
+    assert m["start"] == NOW - 30 * MIN and m["phase"] == "tagged"
+
+
+def test_a_run_past_its_median_has_a_lower_bound_never_a_minute():
+    """The bug: a release run far past the median of past runs (its suite alone runs longer) read
+    "~59s" and the header "release out … (in 1m)" from its median on, for as long as it ran: its end
+    was a minute from now. Past its median a run (the release run, or CI on main) has at least
+    10 min left, or a quarter of its time so far, as a stage past its estimate has, and is
+    marked `over`; within its median nothing changes."""
+    from lsw_mission_control.render.release import tag_milestone
+
+    def rel(ago: float, status: str = "in_progress") -> dict:
+        return {"tag": True, "rel": {"status": status, "createdAt": ts(NOW - ago)}}
+
+    m = tag_milestone(rel(4 * MIN), NOW - HOUR, True, 18.0, 9.0, 20.0)  # within its median: as before
+    assert (m["end"], m["over"]) == (NOW + 5 * MIN, 0.0)
+    m = tag_milestone(rel(8.5 * MIN), NOW - HOUR, True, 18.0, 9.0, 20.0)  # its last minute: still a minute
+    assert (m["end"], m["over"]) == (NOW + MIN, 0.0)
+    m = tag_milestone(rel(20 * MIN), NOW - HOUR, True, 18.0, 9.0, 20.0)  # past it: at least 10 min
+    assert (m["end"], m["over"]) == (NOW + 10 * MIN, 11 * MIN)
+    m = tag_milestone(rel(70 * MIN), NOW - HOUR, True, 18.0, 9.0, 20.0)  # long past it: a quarter of 70 min
+    assert (m["end"], m["over"], m["phase"]) == (NOW + 17.5 * MIN, 61 * MIN, "release running")
+    m = tag_milestone(rel(70 * MIN, "queued"), NOW - HOUR, True, 18.0, 9.0, 20.0)  # queued as long
+    assert (m["end"], m["over"], m["phase"]) == (NOW + 17.5 * MIN, 61 * MIN, "release queued")
+    # CI on main past its median: the same rule, then the hands-on steps and the release run
+    ci = {"ci": {"status": "in_progress", "createdAt": ts(NOW - 40 * MIN)}}
+    m = tag_milestone(ci, NOW - HOUR, True, 18.0, 9.0, 20.0)
+    assert (m["end"], m["over"], m["phase"]) == (NOW + (10 + 20 + 9) * MIN, 22 * MIN, "CI running")
+    ci = {"ci": {"status": "in_progress", "createdAt": ts(NOW - 5 * MIN)}}
+    m = tag_milestone(ci, NOW - HOUR, True, 18.0, 9.0, 20.0)
+    assert (m["end"], m["over"]) == (NOW + (13 + 20 + 9) * MIN, 0.0)
+
+
+def test_an_overdue_release_run_reads_as_a_lower_bound_in_the_row_and_the_header(tmp_path):
+    """Both defects as the owner saw them: main moved on after the tag (its CI began after the
+    release run), and the release run is far past its median. The row starts at the release run and
+    reads `≥`, as a stage past its estimate does, and so does the header; half an hour on, still
+    running, the bound has grown with it (it read "~59s" and "in 1m" until the run ended)."""
+    p = Project(tmp_path)
+    midway(p)
+    for kind in ("build", "review", "fix"):
+        p.agent(f"{kind}:final-merge", status="done", run="wf_merge", start_ago={"build": 3, "review": 2, "fix": 1.5}[kind] * HOUR,
+                quiet_s={"build": 2, "review": 1.6, "fix": 1}[kind] * HOUR)
+    p.store["release_gh"] = gh_store(**TAG_PHASES["release-overdue"])
+    plain, _ = testing.render_text(release_panel(p.engine().build_frame(120), 120)[0], 120)
+    row = _row(plain, "Tag 1.4.0")
+    assert "release running" in row and "since 13:03" in row and "≥17m · 14:30" in row and "~" not in row
+    assert "release out 14:30 (in ≥17m)" in plain
+
+    testing.freeze(NOW + 30 * MIN)
+    plain, _ = testing.render_text(release_panel(p.engine().build_frame(120), 120)[0], 120)
+    row = _row(plain, "Tag 1.4.0")
+    assert "since 13:03" in row and "≥25m · 15:08" in row and "release out 15:08 (in ≥25m)" in plain
+
+    # CI on main past its median, before the tag: the same lower bound
+    testing.freeze(NOW)
+    p.store["release_gh"] = gh_store(**TAG_PHASES["ci-overdue"])
+    plain, _ = testing.render_text(release_panel(p.engine().build_frame(120), 120)[0], 120)
+    row = _row(plain, "Tag 1.4.0")
+    assert "CI running" in row and "since 13:33" in row and "≥39m · 14:52" in row
+    assert "release out 14:52 (in ≥39m)" in plain
 
 
 USAGE = {

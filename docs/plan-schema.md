@@ -212,7 +212,11 @@ begun after that counts for it (an earlier one still shows under Agents at work 
 Change `release` once the old one has shipped, before the new final merge starts. A change undone
 straight away (back to the release it left) gives that release back its final merge. The tag row reads
 GitHub: CI on the remote main's HEAD once this release's merge is done, the tag, then the release
-workflow's run on it.
+workflow's run on it. Main's CI created after the release run is a later commit's (main moved on
+after the tag), so the row starts no later than the release run. Each run is timed by the median of
+its workflow's past successful runs; past it, as a stage past its estimate, it has at least 10 min
+left, or a quarter of its time so far, and the row and the header's `release out` read that time
+with `≥`.
 
 A release whose final merge was done by hand (a hotfix cut straight from main, say) records it:
 `"final_merge_by_hand": {"release": "1.2.1", "at": "2026-09-28T03:34:00+10:00"}`. The row then reads

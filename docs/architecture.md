@@ -318,7 +318,9 @@ Panels:
   journal order within a run, a bare label from the run whose attempts began last; every attempt
   kept, one whose key starts again is over, an end event ends the agentId it names; a journal is
   split at `\n` only); the tag row's phases and timing (the median of successful runs, else
-  `[release] fallback_minutes`); milestone wording; held items (`paused`, and `paused_until` held
+  `[release] fallback_minutes`; a run past it has at least 10 min left or a quarter of its time so
+  far, read `≥` in the row and the head; main's CI created after the release run never starts the
+  row); milestone wording; held items (`paused`, and `paused_until` held
   until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
   resumed` while nothing of the item has run since).
 - Next release, then each later release (`later`) in order, each sizing its stage column by its own
