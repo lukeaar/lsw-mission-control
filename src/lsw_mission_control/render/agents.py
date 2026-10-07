@@ -27,7 +27,7 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
     # An agent silent this long belongs to a run that was cut off (session limit, restart).
     running = [a for a in agents if a["status"] == "running" and a["t1"] and t_now - a["t1"] < silent_s]
     # A paused item's workflow was stopped: its last agent is not at work, whatever its journal says
-    # (a release item only while its hold lasts: one that has ended holds nothing).
+    # (a release item, or a planned one, only while its hold lasts: one that has ended holds nothing).
     paused = set()
     for item in f.plan.other:
         if item.paused:
@@ -38,6 +38,11 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
             paused.update(f"{kind}:{item.key}" for kind in ("build", "review", "fix"))
             for _name, spec, _mins in f.plan.before(item.key):
                 paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))
+    for rel in f.plan.planned():
+        for planned in rel.items:
+            if planned.held(t_now):
+                for _name, spec, _mins in planned.stages:
+                    paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))
     running = [a for a in running if a["label"] not in paused and f"{a['run']}/{a['label']}" not in paused]
     # A retried agent, or a resumed run, starts a fresh attempt under the same label; the one it
     # replaced is not at work, even after its replacement has finished (so compare against every

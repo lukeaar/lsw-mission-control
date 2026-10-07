@@ -370,24 +370,86 @@ def test_a_cycle_across_releases_is_broken_and_every_row_draws(tmp_path):
     assert row(plain, "Alpha") and row(plain, "Bravo") and "Mission control error" not in plain
 
 
-def test_a_planned_item_has_no_hold(tmp_path):
-    """`paused` and `paused_until` are read on release items (and `paused` on other work) only: on a
-    later item, as on a next one, they change nothing (plan-schema.md). search began early and its
-    run stopped 2 h ago, so it reads as any stopped planned item does, held or not. A hold on a
-    planned item (paused, its agents out of Agents at work, its end) would be its own change."""
+def at(t: float) -> str:
+    return dt.datetime.fromtimestamp(t, tz=dt.timezone.utc).isoformat()
+
+
+def hold_planned(p: Project, key: str, **hold) -> None:
+    """The plan with the planned item `key` given `hold` (paused, paused_until)."""
+    plan = load(p)
+    for rel in [plan["next"]] + plan["later"]:
+        for it in rel["items"]:
+            if it["key"] == key:
+                it.update(hold)
+    p.plan(plan)
+
+
+def test_a_planned_item_can_be_held(tmp_path):
+    """A hold on a planned item reads as a release item's. search (1.6.0) began early, its design at
+    work: held, it reads "paused" with no finish of its own and is not under way, the header counts it,
+    and its agent leaves Agents at work. A planned item had no hold: `paused` changed nothing."""
+    from lsw_mission_control.render.agents import agents_panel
+
+    p = Project(tmp_path)
+    later_releases(p)
+    hold_planned(p, "search", paused=True)
+    plain = later_text(p)
+    search = row(plain, "Search across workspaces")
+    assert "paused" in search and search.rstrip(" │").endswith("—")
+    assert "1 paused" in plain and "under way" not in plain
+    agents = testing.render_text(agents_panel(p.engine().build_frame(120), 120, []), 120)[0]
+    assert "design:search" not in agents and "build:icons" in agents
+
+
+def test_a_planned_item_held_until_a_time_is_waited_for_with_its_hold(tmp_path):
+    """icons (1.5.0, 15 min into its 30 min of build) is held until a day from now: it reads when it
+    resumes, and polish, begun early after it, never finishes before that hold and icons' work are
+    over: ~1d00h, the hold counted once."""
+    p = Project(tmp_path)
+    later_releases(p)
+    plan = load(p)
+    plan["next"]["items"].append({"key": "polish", "name": "Polish the icons", "group": "then", "build": 30,
+                                  "flags": ["after:icons"]})
+    p.plan(plan)
+    hold_planned(p, "icons", paused_until=at(NOW + 24 * HOUR))
+    p.agent("build:polish", start_ago=5 * MIN, quiet_s=20, run="wf_run-p")
+    plain = next_text(p)
+    icons, polish = row(plain, "New icon set"), row(plain, "Polish")
+    assert "paused" in icons and icons.rstrip(" │").endswith("from Tue 14:13") and "1 paused" in plain
+    assert "build" in polish and "~1d00h · Tue 14:38" in polish
+
+
+def test_a_planned_items_hold_that_ended_with_nothing_resumed_says_so(tmp_path):
+    """search's design stopped 2 h ago and its hold ended an hour ago, with nothing of it run since: it
+    reads "hold ended" and "not resumed", and the header counts it. At work again, it reads its stage.
+    rollout, not begun, reads the wait on the release before, as a held release item that waits reads
+    its wait."""
     p = Project(tmp_path)
     later_releases(p)
     p.runs.clear()
     p.agent("build:icons", start_ago=15 * MIN, quiet_s=20)
-    p.agent("design:search", start_ago=3 * HOUR, quiet_s=2 * HOUR, run="wf_run-d")  # stopped: silent 2 h
-    before = row(later_text(p), "Search across workspaces")
-    plan = load(p)
-    for it in plan["later"][0]["items"]:
-        if it["key"] == "search":
-            it["paused"] = True
-            it["paused_until"] = dt.datetime.fromtimestamp(NOW + HOUR, tz=dt.timezone.utc).isoformat()
-    p.plan(plan)
-    assert row(later_text(p), "Search across workspaces") == before
+    p.agent("design:search", start_ago=3 * HOUR, quiet_s=2 * HOUR, run="wf_run-d")
+    hold_planned(p, "search", paused_until=at(NOW - HOUR))
+    hold_planned(p, "rollout", paused_until=at(NOW - HOUR))
+    plain = later_text(p)
+    search = row(plain, "Search across workspaces")
+    assert "hold ended" in search and search.rstrip(" │").endswith("not resumed") and "1 not resumed" in plain
+    assert "after 1.5.0" in row(plain, "First week")
+    p.agent("design:search", start_ago=10 * MIN, quiet_s=30, run="wf_run-e")
+    search = row(later_text(p), "Search across workspaces")
+    assert "design" in search and "hold ended" not in search
+
+
+def test_a_planned_items_hold_is_read_from_the_plan():
+    plan = parse_plan({"release": "1", "items": [], "next": {"release": "2", "items": [
+        {"key": "a", "name": "A", "paused": True}, {"key": "b", "name": "B", "paused_until": "2026-10-04T13:00:00+10:00"},
+        {"key": "c", "name": "C"}]}})
+    a, b, c = plan.next.items
+    assert (a.paused, a.paused_until, b.paused, b.paused_until, c.paused) == (True, None, True, 1791082800.0, False)
+    assert a.held(NOW) and b.hold_ended(NOW + 400 * 86400) and not c.held(NOW)
+    with pytest.raises(ValueError, match="paused_until of 'X'"):
+        parse_plan({"release": "1", "items": [], "later": [{"release": "3", "items": [
+            {"key": "x", "name": "X", "paused_until": "Sunday"}]}]})
 
 
 def test_a_label_a_later_item_shares_keeps_naming_the_nearer_one():

@@ -260,6 +260,14 @@ Fixed before the first release:
   and one not begun read the wait on the release before instead of `after <name>`. A release item's
   `after:<key>` still names an item of this release only, so the release's finish never waits on a
   planned release.
+- A next or later release's item can be held, as a release item can (`paused`, `paused_until`): it
+  reads `paused` (`from <when>` for a hold with an end), is not counted as under way, the header
+  counts it (`N paused`), and its agents leave Agents at work. Begun, it keeps its time left with
+  the hold's end counted, so what runs after it waits for both; a hold with an end ends on the clock,
+  and while nothing of the item has run since, it reads `hold ended` · `not resumed` (`N not
+  resumed`), unless it waits on other work, on the release before or on the owner. On a planned item
+  `paused` and `paused_until` used to change nothing: a stopped run read `design failed` · `needs
+  rerun`, and its agent stayed in Agents at work until it fell silent.
 - A hold is counted once along a chain of rows held to one time. A row held until a time added the
   hold to its time left on top of its wait on the row it runs after, whose time left already held the
   same hold, so holding every row of a chain of `after:` waits added the hold again at each link:

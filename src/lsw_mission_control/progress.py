@@ -36,9 +36,9 @@ class Prog:
         self.start = start  # when its first stage started
         self.end = end  # when its last stage finished, once done
         self.alert = alert  # stuck: its stage shows in red
-        self.paused = False  # held by the owner ("paused": true on an other item or a release item)
-        self.resume = None  # when a held release item resumes ("paused_until"), if the plan says
-        self.hold_ended = None  # when a release item's hold ended, while nothing has resumed it
+        self.paused = False  # held by the owner ("paused": true on an other item, a release item or a planned one)
+        self.resume = None  # when a held item resumes ("paused_until"), if the plan says
+        self.hold_ended = None  # when an item's hold ended, while nothing has resumed it
         self.waits = False  # it runs after work that is not done: a tie for "next to finish" goes to that work
         self.owner = False  # it waits on the owner: its stage reads the owner's ("your …", "your go-ahead")
 
@@ -478,11 +478,16 @@ def owner_stage(stages: Sequence, p: Prog) -> int | None:
 
 
 def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> bool:
-    """Any of the item's work has run since `since`, or runs now: an agent of it was active at or
-    after that time, or has not gone silent (a long tool call writes nothing), or a detached job of
-    it is running or finished a unit since. An attempt that died counts as the run it was: where a
+    """Any of the item's work has run since `since`, or runs now (stages_active_since())."""
+    return stages_active_since(item_stages(plan, item), labels, since)
+
+
+def stages_active_since(stages: Sequence, labels: dict, since: float) -> bool:
+    """Any of the work of these stages has run since `since`, or runs now: an agent of it was active
+    at or after that time, or has not gone silent (a long tool call writes nothing), or a detached job
+    of it is running or finished a unit since. An attempt that died counts as the run it was: where a
     label reads the result before it (latest_by_label), the one that died rides along (died_after)."""
-    for _name, spec, _m in item_stages(plan, item):
+    for _name, spec, _m in stages:
         if isinstance(spec, dict):
             job = job_file(spec["progress"])
             if job is not None and (job.units < int(spec["total"]) or (job.last or 0.0) >= since):

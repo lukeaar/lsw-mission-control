@@ -105,7 +105,8 @@ freezes the clock.
   waits on you. The finished items are one row below the rest, `● N finished`. Then the final
   merge and the tag row (CI on the remote main, the tag, the release workflow run, from GitHub).
 - **Next release** (optional): planned items, grouped, with no finish time until work starts; the
-  finished ones are one row below the rest (`● N finished`), as in the release panel.
+  finished ones are one row below the rest (`● N finished`), as in the release panel, and a held
+  item reads `paused`, as there.
   Then each **later release** (optional, the plan's `later`), in order, a panel of its own: an
   item not yet begun waits on the release before its own (`after 1.5.0`), unless its first stage
   is yours (`your …`): it reads that, and the header counts it as waiting on you.

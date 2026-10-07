@@ -98,7 +98,7 @@ item is common), so the plan can carry its own explanations.
   needs at least that stage. Held (`paused`), its stages after the job read held, as any held row's
   do.
 
-### `next`: `{release, about, items: [{key, name, group, before, build, review, fix, flags}]}`
+### `next`: `{release, about, items: [{key, name, group, before, build, review, fix, flags, paused?, paused_until?}]}`
 
 Planned, not scheduled: no finish time until work on an item starts. Items are grouped by
 `group` (in order); the finished ones are counted (`N done`) and drawn as one row below the rest,
@@ -112,8 +112,14 @@ an item of the same release, else of the nearest release before it that has one 
 `items` last), else of the nearest after it: every planned release's waits are worked out together,
 so an item can wait on this release's work or another planned release's. A key no release holds is
 ignored.
-`build`/`review`/`fix` become stages only when their minutes are above 0. A planned item has no
-hold: `paused` is read on `items` and `other` only, and `paused_until` on `items`.
+`build`/`review`/`fix` become stages only when their minutes are above 0. A planned item can be held
+as a release item can (`paused`, `paused_until`): it reads "paused" ("from <when>" for a hold with
+an end), is not under way, the header counts it (`N paused`), and its agents leave Agents at work.
+Begun, it keeps its time left, the hold's end counted as a wait beside the one on the work it runs
+after, so what runs after it waits for both; not begun, it has no finish time, as any planned item.
+Once its `paused_until` has passed with nothing of it run since, it reads `hold ended` · `not
+resumed` (`N not resumed`), unless it waits on other work, on the release before (a later item not
+begun) or on you, which it reads instead.
 
 ### `later`: `[{release, about, items}, …]`
 

@@ -10,7 +10,15 @@ from typing import TYPE_CHECKING, NamedTuple
 from rich.console import Group
 from rich.text import Text
 
-from lsw_mission_control.progress import Prog, in_wait_order, owner_stage, short_name, stages_progress
+from lsw_mission_control.progress import (
+    Prog,
+    hold_left,
+    in_wait_order,
+    owner_stage,
+    short_name,
+    stages_active_since,
+    stages_progress,
+)
 from lsw_mission_control.render.widgets import STAGES_MIN, finished_row, pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import now
@@ -27,6 +35,8 @@ class Planned(NamedTuple):
     wait: tuple | None  # wait_for() of what it runs after: (its time left or None, its name); None once done
     begun: bool  # a stage of it has begun
     owner_at: int | None  # the stage it waits on the owner for (owner_stage()), when it waits on nothing else
+    held: bool  # the owner holds it now
+    stopped: bool  # held, or its hold has ended with nothing of it run since
 
 
 def planned_rows(f: Frame) -> list[list[Planned]]:
@@ -39,7 +49,9 @@ def planned_rows(f: Frame) -> list[list[Planned]]:
     the owner) leaves the row none either.
 
     An item not yet begun has no finish time (planned, not scheduled); one begun never finishes
-    before the work it runs after."""
+    before the work it runs after. An item the owner holds (`paused`, `paused_until`) is held as a
+    release item is: its stages read held, its hold's end is a wait beside the one on that work, and
+    once its `paused_until` has passed with nothing of it run since, it is still stopped."""
     memo = f.memo.get("planned")
     if memo is not None:
         return memo
@@ -105,17 +117,20 @@ def planned_rows(f: Frame) -> list[list[Planned]]:
             return this[i - n_planned][1]
         r, j = where[i]
         item = rels[r].items[j]
+        held = item.held(t_now)
+        stopped = held or (item.hold_ended(t_now) and not stages_active_since(item.stages, labels, item.paused_until))
         after = "" if wait is None else short_name(name_of(wait[1]), plan.items)
         p = stages_progress(item.stages, labels, now=t_now, cal=None, default_fix_share=rc.fix_share,
-                            wait_before=0.0 if wait is None else wait[0], after=after)
+                            wait_before=0.0 if wait is None else wait[0], after=after, paused=stopped,
+                            hold=hold_left(item, t_now))
         begun = any(m[0] in ("●", "◉", "✕", "–") for m in p.marks)
         # The first stage not yet behind it is the owner's ("your ...", no agent), nothing of it runs
         # and it waits on nothing else: it waits on the owner, with no finish time (what runs after it
         # has none either), begun or not, in the next release or a later one.
-        owner_at = owner_stage(item.stages, p) if wait is None else None
+        owner_at = owner_stage(item.stages, p) if wait is None and not held else None
         if not begun or owner_at is not None:
             p.remaining = None
-        out[r][j] = Planned(p, None if wait is None else (wait[0], name_of(wait[1])), begun, owner_at)
+        out[r][j] = Planned(p, None if wait is None else (wait[0], name_of(wait[1])), begun, owner_at, held, stopped)
         return p
 
     in_wait_order(n_planned + len(this), targets_of, compute)
@@ -153,7 +168,7 @@ def planned_panel(f: Frame, width: int, r: int, title: str, after_release: str |
     # their items have at most 8 stages (STAGES_MIN).
     most = max((len(i.stages) for i in nxt.items), default=3)
     t, bar_w = work_table("stages", width, f.plan, rc.final_merge, stages_w=max(STAGES_MIN, 2 * most - 1))
-    live = done = waiting_owner = 0
+    live = done = waiting_owner = npaused = nended = 0
     group, headed = None, False
     for item, row in zip(nxt.items, rows):
         p = row.prog
@@ -167,9 +182,19 @@ def planned_panel(f: Frame, width: int, r: int, title: str, after_release: str |
             if group:
                 t.add_row(Text(group, style=C.FAINT), "", "", "", "")
                 headed = True
-        if row.owner_at is not None:
+        if row.held:
+            # Held by the owner, as a release item is: not failed, not queued, not under way. Begun, it
+            # keeps its time left (what runs after it counts it); not begun, it has none.
+            p.current, p.failed, p.paused, p.resume = "paused", False, True, item.paused_until
+            npaused += 1
+        elif row.owner_at is not None:
             p.current, p.waiting, p.owner = item.stages[row.owner_at][0], True, True
             waiting_owner += 1
+        elif row.stopped and row.wait is None and (row.begun or after_release is None):
+            # Its hold is over and nothing has resumed it (a row that waits on other work, or on the
+            # release before, reads that wait instead): the time it had while held, as if it resumed now.
+            p.current, p.failed, p.hold_ended = "hold ended", False, item.paused_until
+            nended += 1
         elif not row.begun:
             # Planned, not scheduled: no finish time. The first unfinished stage says what it waits
             # for. A later release's item waits on the release before it.
@@ -198,6 +223,10 @@ def planned_panel(f: Frame, width: int, r: int, title: str, after_release: str |
         phrases.append(Text(f"{live} under way", style=C.ACCENT_SOFT))
     if waiting_owner:
         phrases.append(Text(f"{waiting_owner} wait on you", style=C.AMBER))
+    if npaused:
+        phrases.append(Text(f"{npaused} paused", style=C.AMBER))
+    if nended:
+        phrases.append(Text(f"{nended} not resumed", style=C.AMBER))
     if done:
         phrases.append(Text(f"{done} done", style=C.GREEN))
     if nxt.about:

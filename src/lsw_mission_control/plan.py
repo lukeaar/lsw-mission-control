@@ -19,8 +19,25 @@ if TYPE_CHECKING:
 Stage = tuple
 
 
+class Held:
+    """What the owner can hold (a release item, a planned one): `paused`, and `paused_until`."""
+
+    paused: bool
+    paused_until: float | None
+
+    def held(self, at: float) -> bool:
+        """Held by the owner at `at`: its unfinished stages read "paused", never failed or queued. A
+        hold with an end holds until then only, whatever "paused" says beside it: the plan is read
+        once, and the hold ends on the clock."""
+        return self.paused and (self.paused_until is None or at < self.paused_until)
+
+    def hold_ended(self, at: float) -> bool:
+        """Its `paused_until` has passed."""
+        return self.paused_until is not None and at >= self.paused_until
+
+
 @dataclass(frozen=True)
-class Item:
+class Item(Held):
     """A release item: its `before` stages, then build -> review -> fix, labelled <kind>:<key>."""
 
     name: str
@@ -32,16 +49,6 @@ class Item:
     before: tuple[Stage, ...] = ()
     paused: bool = False  # the plan holds it ("paused", or "paused_until"): held() says whether it still does
     paused_until: float | None = None  # when the hold ends (epoch s): its time left and what waits on it count it
-
-    def held(self, at: float) -> bool:
-        """Held by the owner at `at`: its unfinished stages read "paused", never failed or queued. A
-        hold with an end holds until then only, whatever "paused" says beside it: the plan is read
-        once, and the hold ends on the clock."""
-        return self.paused and (self.paused_until is None or at < self.paused_until)
-
-    def hold_ended(self, at: float) -> bool:
-        """Its `paused_until` has passed."""
-        return self.paused_until is not None and at >= self.paused_until
 
 
 @dataclass(frozen=True)
@@ -56,12 +63,16 @@ class OtherItem:
 
 
 @dataclass(frozen=True)
-class NextItem:
+class NextItem(Held):
+    """An item of a release after this one (`next`, `later`): its stages, its `before` ones first."""
+
     name: str
     key: object
     group: str
     stages: tuple[Stage, ...]
     flags: tuple[str, ...] = ()
+    paused: bool = False  # held as a release item is ("paused", or "paused_until")
+    paused_until: float | None = None
 
 
 @dataclass(frozen=True)
@@ -176,12 +187,7 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
         if key is not None and it.get("before"):
             before = tuple(parse_stage(st, it["name"]) for st in _list(it["before"], f"before of {name!r}"))
             pre[str(key)] = before
-        until = it.get("paused_until")
-        if until is not None:
-            try:
-                until = iso(str(until))
-            except ValueError:
-                raise ValueError(f"paused_until of {name!r} must be an ISO time with its offset") from None
+        until = _until(it, name)
         items.append(Item(*fields_, before, bool(it.get("paused")) or until is not None, until))
     other = []
     for o in _list(d.get("other", []), "other"):
@@ -216,9 +222,21 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
     return Plan(release, tuple(items), tuple(other), nxt, plugin_data, pre, by_hand, later)
 
 
+def _until(it: dict, name: str) -> float | None:
+    """An item's `paused_until` (epoch seconds), None when it has none."""
+    until = it.get("paused_until")
+    if until is None:
+        return None
+    try:
+        return iso(str(until))
+    except ValueError:
+        raise ValueError(f"paused_until of {name!r} must be an ISO time with its offset") from None
+
+
 def _planned_release(n, where: str) -> NextRelease:
     """`next`, or one of `later`: {release, about, items: [{key, name, group, before, build, review,
-    fix, flags}]}. Planned, not scheduled: build/review/fix become stages only above 0 minutes."""
+    fix, flags, paused, paused_until}]}. Planned, not scheduled: build/review/fix become stages only
+    above 0 minutes. An item can be held as a release item can."""
     n = _obj(n, where)
     nitems = []
     for it in _list(n.get("items", []), f"{where}.items"):
@@ -233,8 +251,10 @@ def _planned_release(n, where: str) -> NextRelease:
             mins = {k: int(_number(it.get(k, 0), f"{k} of {name!r}", whole=True)) for k in ("build", "review", "fix")}
             stages += [parse_stage([k, f"{k}:{key}", mins[k]], it["name"]) for k in ("build", "review", "fix")
                        if mins[k] > 0]
+        until = _until(it, name)
         nitems.append(NextItem(name, key, str(it.get("group", "")), tuple(stages),
-                               tuple(str(f) for f in _list(it.get("flags", []), f"flags of {name!r}"))))
+                               tuple(str(f) for f in _list(it.get("flags", []), f"flags of {name!r}")),
+                               bool(it.get("paused")) or until is not None, until))
     return NextRelease(str(n["release"]), str(n.get("about", "")), tuple(nitems))
 
 

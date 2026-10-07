@@ -84,7 +84,8 @@ Plan(release, items, other, next, plugin_data, pre, final_merge_by_hand, later);
                                                       # .planned(): next (if any), then later
 Item(name, key, build, review, fix, flags, before, paused, paused_until); .held(at) .hold_ended(at)   # a hold
                                                       # with an end ends on the clock, not at the plan's next read
-OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags)
+OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags, paused,
+                                                      # paused_until); .held(at) .hold_ended(at), as Item's (Held)
 NextRelease(release, about, items)                    # `next`, and each release of `later`
 PlanLoader(path, plugins).refresh() -> Plan           # mtime-gated; a bad parse keeps the last good plan; .note
 Notes(waiting_on_owner, in_progress_elsewhere, mtime); NotesLoader(path).refresh() -> Notes
@@ -334,7 +335,9 @@ Panels:
   before it (this release's last), else the nearest after it; each sizing its stage column by its own
   items, finished ones included (a later release never changes the panels before it): an item not
   yet begun waits on the release before (`[release] later_wait`), never this one, unless its first
-  stage is the owner's (`your …`), which it reads, counted as waiting on the owner; the unfinished
+  stage is the owner's (`your …`), which it reads, counted as waiting on the owner; held items as
+  the release's (`paused`, `from <when>`, `hold ended` · `not resumed`, their counts in the header,
+  their agents out of Agents at work while held); the unfinished
   rows under their groups (a heading only over rows drawn), then `● N finished` as the release's
   (after a blank row when a heading was drawn, so it never reads as the last group's own).
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
