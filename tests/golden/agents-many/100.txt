@@ -4,7 +4,7 @@
 │ ✓ nothing is waiting on you                                                                      │
 ╰───────────────────────────────────────────────────────────────────────── updated 14:08 · 5m ago ─╯
 ╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────╮
-│ ━━━━━━━━━━━━━━━━━━━━━━━━ 0% of the release done  ·  1/6 items ready                              │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 0% of the release done  ·  1/6 items ready  ·  1 wait on you            │
 │                          release out Tue 01:34 (in 11h21)                                        │
 │                                                                                                  │
 │ item                             stages       stage            progress                      eta │

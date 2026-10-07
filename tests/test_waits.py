@@ -295,6 +295,41 @@ def test_release_items_always_have_a_finish_time(tmp_path):
         assert "·" in row(plain, name).split("━")[-1]
 
 
+# ── release: a stage of the owner's ──────────────────────────────────────────────────────────────
+def test_release_an_item_whose_next_stage_is_the_owners_waits_on_the_owner(tmp_path):
+    """A release item whose next stage is the owner's ("your ...", no agent), with nothing of it running
+    and nothing else to wait for, reads that stage, as the next release's rows do: it read "queued".
+    Sign's design is done, so it waits on the sign-off; Pick has not begun and its first stage is the
+    pick. Both keep their time left (the release's finish counts them), and the header counts them
+    with the go-ahead Security review waits for. A row that waits on other work reads that wait (Waits,
+    after Slow), a held one "paused", and one whose stage before the owner's failed reads the failure:
+    none of those is counted."""
+    p = Project(tmp_path)
+    midway(p)
+    p.runs.clear()
+    plan = release_plan()
+    plan["items"] = plan["items"][5:] + [
+        {"name": "Pick", "key": "pick", "build": 30, "before": [["your pick", None, 0]]},
+        {"name": "Sign", "key": "sign", "build": 30, "before": [["design", "design:sign", 30], ["your sign-off", None, 0]]},
+        {"name": "Waits", "key": "waits", "build": 30, "before": [["your go", None, 0]], "flags": ["after:slow"]},
+        {"name": "Slow", "key": "slow", "build": 60},
+        {"name": "Held", "key": "held", "build": 30, "before": [["your nod", None, 0]], "paused": True},
+        {"name": "Broke", "key": "broke", "build": 30, "before": [["design", "design:broke", 30], ["your call", None, 0]]},
+    ]
+    p.plan(plan)
+    p.agent("design:sign", status="done", start_ago=2 * HOUR, quiet_s=90 * MIN)
+    p.agent("build:slow", start_ago=10 * MIN, quiet_s=20)
+    p.agent("design:broke", status="failed", start_ago=2 * HOUR, quiet_s=90 * MIN)
+    plain = release_text(p)
+    pick, sign = row(plain, "Pick"), row(plain, "Sign")
+    assert "your pick" in pick and "~30m · 14:43" in pick  # its build: the pick itself plans no time
+    assert "●─○─○─○─○" in sign and "your sign-off" in sign and "~30m · 14:43" in sign
+    assert "your go-ahead" in row(plain, "Security review")
+    assert "after slow" in row(plain, "Waits") and "paused" in row(plain, "Held")
+    assert "design failed" in row(plain, "Broke") and "needs rerun" in row(plain, "Broke")
+    assert "3 wait on you" in plain and "queued" not in plain
+
+
 # ── next release: "after:<key>" ────────────────────────────────────────────────────────────────
 def next_text(p: Project) -> str:
     return testing.render_text(next_panel(p.engine().build_frame(120), 120), 120)[0]

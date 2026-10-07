@@ -1,5 +1,5 @@
 ╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ━━━━━━━━━━━━━━━━━━━━━━━━ 53% of the release done  ·  1/6 items ready  ·  1 failed  ·  1 overrun                      │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 53% of the release done  ·  1/6 items ready  ·  1 failed  ·  1 overrun  ·  1 wait on you    │
 │                          release out 14:52 (in ≥39m)                                                                 │
 │                                                                                                                      │
 │ item                                    stages       stage            progress                                   eta │

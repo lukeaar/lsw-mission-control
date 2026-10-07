@@ -302,6 +302,8 @@ Panels:
   the names get what is left, never under 1 cell (under 75, rich shares the rest of the cut among
   the columns).
 - Release: the head meter (≤ 99% until released), `done/n items ready`, failed and overrun counts,
+  `N wait on you` (an item whose next stage is the owner's, `your …` with no agent, reads it, as the
+  planned releases' rows do, and `owner_ok`'s `your go-ahead` counts too),
   `release out HH:MM (in X)` / `released HH:MM`, live rows, `● N finished`, the final merge and the
   tag row (`[release] tag_row`), `after:` / `after_all` / `owner_ok`, a `null` key is done; stage
   dots; each row's state; ETA colours and the Key; calibration (release items only, ≥ 3 samples,

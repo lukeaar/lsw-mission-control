@@ -5,7 +5,7 @@
 ╰───────────────────────────────────────────────────── updated 14:08 · 5m ago ─╯
 ╭─  Release 1.4.0  ────────────────────────────────────────────────────────────╮
 │ ━━━━━━━━━━━━━━━━━━━━━━━━ 0% of the release done  ·  1/6 items ready          │
-│                          release out Tue 01:34 (in 11h21)                    │
+│                          1 wait on you  ·  release out Tue 01:34 (in 11h21)  │
 │                                                                              │
 │ item         stages       stage            progress                      eta │
 │ Expor…     ○─○─○─○─○      queued           ━━━━━━━━   0%       ~2h11 · 16:24 │

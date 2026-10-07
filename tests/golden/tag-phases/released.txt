@@ -1,5 +1,6 @@
 ╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ━━━━━━━━━━━━━━━━━━━━━━━━ 100% of the release done  ·  1/6 items ready  ·  1 failed  ·  1 overrun  ·  released 14:01  │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 100% of the release done  ·  1/6 items ready  ·  1 failed  ·  1 overrun  ·  1 wait on you   │
+│                          released 14:01                                                                              │
 │                                                                                                                      │
 │ item                                    stages       stage            progress                                   eta │
 │ Export to CSV                         ●─●─●─●─◉      fix              ━━━━━━━━━━━━━━━━━━━━━  93%        ~10m · 14:23 │

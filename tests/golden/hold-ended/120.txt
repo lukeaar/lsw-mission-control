@@ -1,6 +1,6 @@
 ╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ━━━━━━━━━━━━━━━━━━━━━━━━ 31% of the release done  ·  1/6 items ready  ·  1 paused  ·  1 not resumed                  │
-│                          release out Tue 00:31 (in 10h18)                                                            │
+│                          1 wait on you  ·  release out Tue 00:31 (in 10h18)                                          │
 │                                                                                                                      │
 │ item                                    stages       stage            progress                                   eta │
 │ Export to CSV                         ●─●─●─●─◉      fix              ━━━━━━━━━━━━━━━━━━━━━  93%        ~10m · 14:23 │

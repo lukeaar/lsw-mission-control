@@ -63,6 +63,10 @@ item is common), so the plan can carry its own explanations.
   `owner_ok` (shows "your go-ahead" until it starts). See "Waits" below.
 - A fix whose review found nothing of severity blocker/major/minor is skipped (`–`); until the
   review is done its time is weighted by the fix share.
+- A stage named `your …` with no agent (`null`) is the owner's. While it is the item's next stage
+  (everything before it done), nothing of the item runs and it waits on nothing else, the row reads
+  that stage and waits on you, as in `next`: the header counts it (`N wait on you`), with each
+  `owner_ok` item's "your go-ahead". It keeps its planned time, so the release's finish counts it.
 - `paused: true`: held by the owner (its workflow was stopped). It reads "paused" (its bar filled
   with the work done in muted grey), with no finish of its own, never "failed" or "queued"; the
   header counts it as paused, its agents leave Agents at work, and it keeps its time left, so the

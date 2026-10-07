@@ -243,6 +243,12 @@ Fixed before the first release:
   stage, or `hold ended` with `not resumed` (the header counts `N not resumed`) while nothing of it
   has run since: no agent of it active since that time or still at work, no job of it running. It
   keeps the time left it had while held, and its agents are back in Agents at work.
+- A release item whose next stage is the owner's (`your …`, with no agent) reads that stage, as the
+  next release's rows do. It read `queued`, while the same stage in the next release's panel read as
+  waiting on the owner. That holds while nothing of the item runs and it waits on nothing else; it
+  keeps its time left, so the release's finish still counts it. The release's header counts the rows
+  that wait on the owner (`N wait on you`), these and `owner_ok`'s `your go-ahead`, as the next
+  release's header does. A stage that failed before the owner's reads the failure.
 - A hold is counted once along a chain of rows held to one time. A row held until a time added the
   hold to its time left on top of its wait on the row it runs after, whose time left already held the
   same hold, so holding every row of a chain of `after:` waits added the hold again at each link:

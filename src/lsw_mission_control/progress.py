@@ -40,6 +40,7 @@ class Prog:
         self.resume = None  # when a held release item resumes ("paused_until"), if the plan says
         self.hold_ended = None  # when a release item's hold ended, while nothing has resumed it
         self.waits = False  # it runs after work that is not done: a tie for "next to finish" goes to that work
+        self.owner = False  # it waits on the owner: its stage reads the owner's ("your …", "your go-ahead")
 
 
 class Calibration:
@@ -459,6 +460,21 @@ def hold_left(item, at: float) -> float:
     """Seconds until a held item's hold ends: 0 for a hold with no end, or one not holding it at `at`.
     `item` is anything with held() and paused_until (a release item, a planned one)."""
     return max(0.0, item.paused_until - at) if item.held(at) and item.paused_until is not None else 0.0
+
+
+def owner_stage(stages: Sequence, p: Prog) -> int | None:
+    """The stage a row waits on the owner for, by its index: the first of its stages not yet behind it
+    (done, or a fix not needed), when that is the owner's (named "your …", with no agent) and nothing
+    of the row runs. None otherwise: a stage that runs, or one that failed before it, comes first.
+    The release, the next release and the later ones read it alike."""
+    marks = p.marks
+    if len(marks) != len(stages) or any(m[0] == "◉" for m in marks):
+        return None
+    i = next((k for k, m in enumerate(marks) if m[0] not in ("●", "–")), None)
+    if i is None or marks[i][0] != "○":
+        return None
+    name, spec, _m = stages[i]
+    return i if spec is None and str(name).lower().startswith("your") else None
 
 
 def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> bool:

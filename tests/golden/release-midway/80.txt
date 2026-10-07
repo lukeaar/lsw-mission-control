@@ -7,7 +7,7 @@
 ╰───────────────────────────────────────────────────── updated 14:08 · 5m ago ─╯
 ╭─  Release 1.4.0  ────────────────────────────────────────────────────────────╮
 │ ━━━━━━━━━━━━━━━━━━━━━━━━ 29% of the release done  ·  1/6 items ready         │
-│                          1 failed  ·  1 overrun                              │
+│                          1 failed  ·  1 overrun  ·  1 wait on you            │
 │                          release out 23:22 (in 9h09)                         │
 │                                                                              │
 │ item         stages       stage            progress                      eta │
