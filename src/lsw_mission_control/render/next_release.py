@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from rich.console import Group
 from rich.text import Text
 
-from lsw_mission_control.progress import Prog, in_wait_order, short_name, stages_progress
+from lsw_mission_control.progress import Prog, in_wait_order, owner_stage, short_name, stages_progress
 from lsw_mission_control.render.widgets import STAGES_MIN, finished_row, pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import now
@@ -70,14 +70,11 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
         p = stages_progress(item.stages, labels, now=t_now, cal=None, default_fix_share=rc.fix_share,
                             wait_before=0.0 if wait is None else wait[0], after=after)
         begun[i] = any(m[0] in ("●", "◉", "✕", "–") for m in p.marks)
-        # The first stage not yet behind it: when it is the owner's ("your ...", no agent), nothing
-        # is running and it waits on nothing else, the row waits on the owner, wherever that stage
-        # sits in the row: no finish time (what runs after it has none either).
-        nxt_i = next((k for k, m in enumerate(p.marks) if m[0] == "○"), None)
-        running = any(m[0] == "◉" for m in p.marks)
-        owner_at[i] = nxt_i if (begun[i] and not running and wait is None and nxt_i is not None
-                                and item.stages[nxt_i][1] is None
-                                and item.stages[nxt_i][0].lower().startswith("your")) else None
+        # The first stage not yet behind it is the owner's ("your ...", no agent), nothing of it runs
+        # and it waits on nothing else: the row waits on the owner, wherever that stage sits in the
+        # row, begun or not, in the next release or a later one (owner_stage, the release panel's rule
+        # too): no finish time (what runs after it has none either).
+        owner_at[i] = owner_stage(item.stages, p) if wait is None else None
         if not begun[i] or owner_at[i] is not None:
             p.remaining = None
         return p
@@ -97,27 +94,22 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
                 headed = True
         blocking = wait is not None
         if owner_at[i] is not None:
-            p.current, p.waiting = item.stages[owner_at[i]][0], True
+            p.current, p.waiting, p.owner = item.stages[owner_at[i]][0], True, True
             waiting_owner += 1
         elif not started:
             # Planned, not scheduled: no finish time. The first unfinished stage says what it waits
-            # for: one named "your ..." (a decision, a go-ahead, a pick-list) is the owner's. A later
-            # release's item waits on the release before it, the owner's first stage included.
+            # for (one named "your ..." is the owner's, read above). A later release's item waits on
+            # the release before it.
             first = item.stages[0] if item.stages else None
-            owner = (first is not None and first[1] is None and first[0].lower().startswith("your")
-                     and not blocking and after_release is None)
             if blocking:
                 p.current = f"after {short_name(nxt.items[wait[1]].name, f.plan.items)}"
             elif after_release is not None:
                 p.current = rc.later_wait.format(release=after_release)
-            elif owner:
-                p.current = first[0]
             elif first is not None and first[1] is None:
                 p.current = first[0]
             else:
                 p.current = "planned"
             p.remaining, p.waiting = None, True
-            waiting_owner += owner
         else:
             live += 1
         work_row(t, item.name, p, bar_w)

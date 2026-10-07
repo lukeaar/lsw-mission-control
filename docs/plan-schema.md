@@ -104,7 +104,9 @@ Planned, not scheduled: no finish time until work on an item starts. Items are g
 `group` (in order); the finished ones are counted (`N done`) and drawn as one row below the rest,
 `● N finished`, as the release's are (after a blank row where group headings are drawn), so a
 group whose items have all finished has no heading.
-A stage named `your …` with a null spec is the owner's ("wait on you").
+A stage named `your …` with a null spec is the owner's ("wait on you"): an item whose first stage
+not yet behind it is the owner's, with nothing of it running and nothing else to wait for, reads it
+and has no finish time, begun or not (a stage that failed before it reads the failure).
 `after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below); the key is
 an item of the same release (one of another release's items is ignored).
 `build`/`review`/`fix` become stages only when their minutes are above 0. A planned item has no
@@ -117,9 +119,10 @@ a list, even of one (absent or `null`: none; anything else is refused).
 Each is its own panel, right after the next release's (titled by `[release] later_title`,
 `Later release 1.6.0`); one with no items has none. An item not yet begun waits on the release
 before its own: its stage reads `after 1.5.0` (`[release] later_wait`, which may say
-`"{release} installed"`), never this release, with no finish time. That holds for an item whose
-first stage is the owner's (`your …`) too, which is not counted as waiting on you; `after:<key>`
-(an item of the same release) reads `after <name>`, as in `next`. Once work on an item begins it
+`"{release} installed"`), never this release, with no finish time. An item whose first stage is
+the owner's (`your …`) reads that stage instead and waits on you, as in `next` (the header counts
+it): a decision you can make now never waits out of sight for the release before to ship.
+`after:<key>` (an item of the same release) reads `after <name>`, as in `next`. Once work on an item begins it
 reads as a next item does: its stage and its time left. The first later release comes after `next`
 (after this one, in a plan with no `next`). When a release ships, `next` becomes `items` and the
 first of `later` becomes `next`.

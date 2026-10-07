@@ -329,7 +329,8 @@ Panels:
   the row runs after, so a chain of rows held to one time counts it once).
 - Next release, then each later release (`later`) in order, each sizing its stage column by its own
   items, finished ones included (a later release never changes the panels before it): an item not
-  yet begun waits on the release before (`[release] later_wait`), never this one; the unfinished
+  yet begun waits on the release before (`[release] later_wait`), never this one, unless its first
+  stage is the owner's (`your …`), which it reads, counted as waiting on the owner; the unfinished
   rows under their groups (a heading only over rows drawn), then `● N finished` as the release's
   (after a blank row when a heading was drawn, so it never reads as the last group's own).
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not

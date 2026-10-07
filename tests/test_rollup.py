@@ -120,12 +120,11 @@ def test_finished_items_are_counted_once_and_drawn_as_one_row(tmp_path, where):
                                   "● 4 finished"]
     assert table(plain)[-1].rstrip(" │").endswith("✓")
     assert "done" not in "\n".join(table(plain)) and "100%" not in plain
-    counts = "7 items planned  ·  1 under way  ·  " + ("1 wait on you  ·  " if where == "next" else "") + "4 done"
-    assert head(plain).startswith(f"│ {counts}  ·  ")
-    # what is left reads as it did: the owner's pick, the wait on it, the one at work
+    assert head(plain).startswith("│ 7 items planned  ·  1 under way  ·  1 wait on you  ·  4 done  ·  ")
+    # what is left reads as it did: the owner's pick (in a later release too), the wait on it, the one at work
     rows = dict(zip(first_cells(plain), table(plain)))
     pick, sync, icons = rows["Pick the sync engine"], rows["Offline sync"], rows["New icon set"]
-    assert ("your pick" if where == "next" else "after 1.5.0") in pick and "after pick" in sync
+    assert "your pick" in pick and "after pick" in sync
     assert "build" in icons and "~25m · 14:38" in icons
 
 

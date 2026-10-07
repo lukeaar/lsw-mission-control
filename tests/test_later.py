@@ -75,25 +75,46 @@ def test_an_item_not_begun_waits_on_the_release_before_its_own(tmp_path):
     p = Project(tmp_path)
     with_two_later(p)
     r16, r17 = later_text(p, 0), later_text(p, 1)
-    for name in ("First week of 1.5.0", "Plugin API"):
-        r = row(r16, name)
-        assert "after 1.5.0" in r and r.rstrip(" │").endswith("—")  # planned, not scheduled: no finish time
+    r = row(r16, "First week of 1.5.0")
+    assert "after 1.5.0" in r and r.rstrip(" │").endswith("—")  # planned, not scheduled: no finish time
     assert "after 1.6.0" in row(r17, "Single sign-on")
     # never this release: 1.4.0 is not what a release two out waits for
     assert "1.4.0" not in r16 + r17
 
 
-def test_an_owners_first_stage_waits_for_the_release_before_too(tmp_path):
-    """"your scope" is the owner's, but not yet: the item waits on 1.5.0, and the header does not
-    count it as waiting on the owner (the next release's "your pick" still does)."""
+def test_an_owners_first_stage_in_a_later_release_waits_on_the_owner(tmp_path):
+    """"your scope" is the owner's, a decision the owner can make now: a later item whose first stage is
+    the owner's reads that stage and counts as waiting on the owner, as a next item does. It read the
+    release before (`after 1.5.0`) and was not counted, so the decision stayed out of sight until that
+    release shipped. It has no finish time, and neither has what runs after it."""
     p = Project(tmp_path)
     with_two_later(p)
     r16, r17 = later_text(p, 0), later_text(p, 1)
-    assert "after 1.5.0" in row(r16, "Plugin API") and "your scope" not in r16
-    assert "after 1.6.0" in row(r17, "Audit log export")
-    assert "wait on you" not in r16 + r17
+    plugin = row(r16, "Plugin API")
+    assert "your scope" in plugin and plugin.rstrip(" │").endswith("—") and "1 wait on you" in r16
+    assert "after plugin" in row(r16, "Themes as plugins")
+    assert "your pick of" in row(r17, "Audit log export") and "1 wait on you" in r17
+    assert "after 1.6.0" in row(r17, "Single sign-on")
     nxt = testing.render_text(next_panel(p.engine().build_frame(150), 150), 150)[0]
     assert "1 wait on you" in nxt and "your pick" in row(nxt, "Pick the sync engine")
+
+
+@pytest.mark.parametrize("where", ("next", "later"))
+def test_a_stage_that_failed_before_the_owners_reads_the_failure(tmp_path, where):
+    """A begun item whose measure failed, with the owner's go-ahead after it: the failure needs a re-run
+    before the owner has anything to say, so the row reads the failure, never "your go-ahead" (the
+    planned panels read the first stage not done, never the first not begun; a ✕ comes first)."""
+    p = Project(tmp_path)
+    later_releases(p)
+    plan = load(p)
+    rel = plan["next"] if where == "next" else plan["later"][0]
+    rel["items"].append({"key": "gauge", "name": "Gauge the cache", "before": [
+        ["measure", "measure:gauge", 30], ["your go-ahead", None, 0]], "build": 30})
+    p.plan(plan)
+    p.agent("measure:gauge", status="failed", start_ago=2 * HOUR, quiet_s=90 * MIN, run="wf_run-g")
+    plain = next_text(p) if where == "next" else later_text(p)
+    gauge = row(plain, "Gauge")
+    assert "measure failed" in gauge and "needs rerun" in gauge and "your go-ahead" not in gauge
 
 
 def test_an_item_after_another_of_its_release_reads_after_it(tmp_path):
@@ -121,7 +142,7 @@ def test_without_a_next_release_the_first_later_one_comes_after_this_one(tmp_pat
     p.plan(plan)
     plain, _ = testing.render_engine(p.engine(), 150)
     assert "Next release" not in plain and "Later release 1.6.0" in titles(plain)
-    assert "after 1.4.0" in row(later_text(p), "Plugin API")
+    assert "after 1.4.0" in row(later_text(p), "First week")
 
 
 def test_a_later_release_with_no_items_has_no_panel(tmp_path):
@@ -154,7 +175,7 @@ def test_the_title_and_the_wait_are_the_projects_words(tmp_path):
         later_wait = "{release} installed"
         """)
     plain, _ = testing.render_engine(p.engine(), 150)
-    assert "Then 1.6.0" in titles(plain) and "1.5.0 installed" in row(plain, "Plugin API")
+    assert "Then 1.6.0" in titles(plain) and "1.5.0 installed" in row(plain, "First week")
 
 
 def test_a_later_panel_that_fails_shows_its_error_in_its_own_place(tmp_path, monkeypatch):

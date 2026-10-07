@@ -24,13 +24,13 @@
 │ New i…        ◉─○         build            ━━━━━━━━  38%        ~25m · 14:38 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─  Later release 1.6.0  ──────────────────────────────────────────────────────╮
-│ 4 items planned  ·  1 under way  ·  once 1.5.0 is out                        │
+│ 4 items planned  ·  1 under way  ·  1 wait on you  ·  once 1.5.0 is out      │
 │                                                                              │
 │ item         stages       stage            progress                      eta │
 │ after…                                                                       │
 │ First…       ○─○─○        after 1.5.0      ━━━━━━━━   0%                   — │
 │ then                                                                         │
-│ Plugi…      ○─○─○─○       after 1.5.0      ━━━━━━━━   0%                   — │
+│ Plugi…      ○─○─○─○       your scope       ━━━━━━━━   0%                   — │
 │ Theme…        ○─○         after plugin     ━━━━━━━━   0%                   — │
 │ Searc…       ◉─○─○        design           ━━━━━━━━  13%       ~2h50 · 17:03 │
 ╰──────────────────────────────────────────────────────────────────────────────╯

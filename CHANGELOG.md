@@ -25,7 +25,8 @@ A plan can list the releases after the next one: `later`, one `{release, about, 
 in the order they ship, each shaped like `next`. Each is a panel of its own right after the next
 release's (`Later release 1.6.0`; `[release] later_title`), and its items not yet begun wait on the
 release before their own (`after 1.5.0`; `[release] later_wait`, e.g. `"{release} installed"`),
-never on this one, an owner's first stage included. A release two out used to go in as a group at
+never on this one; an item whose first stage is the owner's (`your …`) reads that stage and waits
+on the owner, as a next item does (the header counts it). A release two out used to go in as a group at
 the bottom of the next release's panel, where its first stage, a null stage typed by hand, named
 the wrong release's install. A plan with one `next` draws as before (but for `1 item planned`, which
 read `1 items planned`); when a release ships, `next` becomes `items` and the first of `later`
@@ -248,7 +249,8 @@ Fixed before the first release:
   waiting on the owner. That holds while nothing of the item runs and it waits on nothing else; it
   keeps its time left, so the release's finish still counts it. The release's header counts the rows
   that wait on the owner (`N wait on you`), these and `owner_ok`'s `your go-ahead`, as the next
-  release's header does. A stage that failed before the owner's reads the failure.
+  release's header does. In the release and the planned releases alike, a stage that failed before
+  the owner's reads the failure (a planned row read `your go-ahead` beside its `needs rerun`).
 - A hold is counted once along a chain of rows held to one time. A row held until a time added the
   hold to its time left on top of its wait on the row it runs after, whose time left already held the
   same hold, so holding every row of a chain of `after:` waits added the hold again at each link:

@@ -107,7 +107,8 @@ freezes the clock.
 - **Next release** (optional): planned items, grouped, with no finish time until work starts; the
   finished ones are one row below the rest (`● N finished`), as in the release panel.
   Then each **later release** (optional, the plan's `later`), in order, a panel of its own: an
-  item not yet begun waits on the release before its own (`after 1.5.0`).
+  item not yet begun waits on the release before its own (`after 1.5.0`), unless its first stage
+  is yours (`your …`): it reads that, and the header counts it as waiting on you.
 - **Other work in progress**: everything the release does not wait for, including rows that wait
   on a plugin's live job.
 - **The side row**: each plugin's card, then **Repository** (HEAD, unpushed commits, branches,

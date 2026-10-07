@@ -271,8 +271,9 @@ def next_release(p: Project) -> None:
 
 def later_releases(p: Project) -> None:
     """Three releases: this one, the next, and the one after it (`later`). The later release's items
-    not yet begun wait on the next release, never on this one (an owner's first stage too); one runs
-    after another of its own release; one begun early reads its stage and its time."""
+    not yet begun wait on the next release, never on this one, but for one whose first stage is the
+    owner's, which waits on the owner; one runs after another of its own release; one begun early
+    reads its stage and its time."""
     plan = release_plan()
     plan["items"] = plan["items"][:1]
     plan["other"] = []
