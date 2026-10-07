@@ -152,9 +152,12 @@ def test_self_check_refuses_a_fault_confined_to_the_narrower_logo(tmp_path, monk
 
 
 def test_self_check_draws_the_narrower_logo_where_no_fixed_size_does(tmp_path, monkeypatch, capsys):
-    """Stale plan data widens Model usage (" · as of HH:MM"): 91 columns here, so with token counts the
-    logo is square at 150 and absent at 99 and 80, and only the tightest width (91 + 17 = 108) draws it
-    narrower than square. The same fault, confined to that path, is refused there."""
+    """A status the panel does not know is drawn as it comes, and a long one widens Model usage (98
+    columns here), so the logo is square at 150 and absent at 99 and 80, and only the tightest width
+    (98 + 17 = 115) draws it narrower than square: the same fault, confined to that path, is refused
+    there, in the first pass already (the status row makes Model usage 6 rows before any token is
+    counted). Stale plan data widened Model usage this way (" · as of HH:MM") until its rows stopped
+    saying how old they are."""
     import lsw_mission_control.render.usage as usage_mod
 
     real = usage_mod.logo_panel
@@ -163,17 +166,17 @@ def test_self_check_draws_the_narrower_logo_where_no_fixed_size_does(tmp_path, m
     p = Project(tmp_path)
     midway(p)
     record = json.loads((p.usage_dir / "usage.json").read_text())
-    p.usage({**record, "at": NOW - 3 * HOUR})
+    p.usage({**record, "status": "allowed_but_with_a_status_this_dashboard_has_never_seen_before_in_any_of_its_runs"})
     p.finish_runs()
     e = p.engine()  # with token counts, as the live view has them
     geoms = {}
     for width in (150, 99, 80):
         e.frame(testing.record_console(width))
         geoms[width] = e.logo.geom
-    assert geoms[150] == (12, 26) and geoms[99] is None and geoms[80] is None
+    assert geoms[150] == (13, 28) and geoms[99] is None and geoms[80] is None
     assert in_process_self_check(p) == 1
     assert capsys.readouterr().err.strip().splitlines()[-1] == \
-        "self-check: the logo is drawn where the live view does not find it (108x60, tokens counted)"
+        "self-check: the logo is drawn where the live view does not find it (115x60)"
 
 
 def test_self_check_fails_when_the_logo_is_drawn_where_the_live_view_does_not_find_it(tmp_path, monkeypatch, capsys):

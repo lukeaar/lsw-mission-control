@@ -348,7 +348,8 @@ Panels:
   head and `also in motion`.
 - The side row: plugin cards, then Repository.
 - Agents at work and the recent test suites.
-- Model usage: meters, stale data as a faint meter with a muted % and an amber `· as of HH:MM`,
+- Model usage: meters, stale data as a faint meter with a muted % and the subtitle in amber (no note
+  on the rows, which would widen Model usage and push the logo out of a 99-column window),
   resets (and a passed reset), status (`warning: close to a limit`, `limit reached`, others),
   `using usage credits`, tokens and tokens by model, the subtitle
   `plan data as of HH:MM · X ago · probe|terminal`, placeholders while there is no data.

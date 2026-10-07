@@ -48,10 +48,10 @@ def usage_panel(f: Frame, width: int):
                           + Text(f"  reset {clock(resets)} · no plan data since", style=C.FAINT))
                 continue
             col = C.GREEN if pct < 50 else C.AMBER if pct < 80 else C.RED
+            # Stale: a faint meter and a muted share; how old the data is, the subtitle says in amber
+            # (a note on each row widened Model usage, and pushed the logo out of a 99-column window).
             line = meter(pct / 100, METER_W, C.FAINT if stale else col)
             line.append(f"  {pct:3.0f}%", style=C.MUTED if stale else f"bold {col}")
-            if stale:
-                line.append(f" · as of {clock(at)}" if at else " · age unknown", style=C.AMBER)
             if resets:
                 line.append(f"   resets {clock(resets)} · in {human(resets - t_now)}", style=C.MUTED)
             g.add_row(label, line)
@@ -97,8 +97,9 @@ def usage_panel(f: Frame, width: int):
             m.add_row(fam, count(v["5h"]), count(v["today"]), count(v["7d"]), f"{100 * v['7d'] / week:.0f}%")
         parts += [Text(""), m]
     src = {"probe": "probe", None: "terminal"}.get(usage.get("source") if usage else None, "terminal")
-    sub = f"plan data as of {clock(at)} · {human(t_now - at)} ago · {src}" if usage and at else ""
-    return panel(Group(*parts), "Model usage", sub)
+    sub = "" if not usage else (f"plan data as of {clock(at)} · {human(t_now - at)} ago · {src}" if at
+                                else f"plan data of unknown age · {src}")
+    return panel(Group(*parts), "Model usage", sub, C.AMBER if usage and stale else None)
 
 
 def usage_row(console: Console, f: Frame, width: int, logo: LogoAnimator | None):
@@ -120,8 +121,9 @@ def usage_row(console: Console, f: Frame, width: int, logo: LogoAnimator | None)
     columns. At 99 the logo gets 21 (17 of drawing beside 10 rows), the smallest fits from 94, the
     square from 104. The fixed cut-off this replaces (the logo from 100 columns, whatever Model usage
     held) left a 99-column window with no logo, and clipped the weekly row at 100 ("in …"). A row
-    that grows takes its room from the logo, never the reverse: plan data gone stale adds " · as of
-    HH:MM" (Model usage 91: the logo from 108), a reset passed with no plan data since 81 (from 98)."""
+    that grows takes its room from the logo, never the reverse: a reset passed with no plan data since
+    81 (the logo from 98). Plan data gone stale no longer grows a row (it added " · as of HH:MM":
+    Model usage 91, the logo from 108); the subtitle says it, so at 99 the logo shows in every state."""
     usage = usage_panel(f, width)
     if logo is None:
         return usage

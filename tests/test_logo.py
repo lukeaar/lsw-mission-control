@@ -12,8 +12,9 @@ from lsw_mission_control.config import DEFAULT_LOGO_PATH, LogoCfg, parse_logo_pa
 from lsw_mission_control.render.logo import LOGO_FRAMES, LOGO_MIN_COLS, LOGO_PANEL_PAD, LogoAnimator, logo_cells, logo_panel, logo_points
 from lsw_mission_control.render.usage import usage_panel, usage_row
 
+from conftest import NOW
 from golden_util import check
-from scenarios import UNREADABLE, Project, midway
+from scenarios import HOUR, MIN, UNREADABLE, Project, midway
 
 # The drawing the dashboard has always shown, in its own 150x150 units.
 LSW_SEGMENTS = (("L", (17, 105), (57, 25)), ("Q", (57, 25), (71, 65), (85, 105)),
@@ -153,3 +154,61 @@ def test_segments_carry_the_background():
     anim.i = LOGO_FRAMES - 1
     anim.advance()
     assert anim.i == 0
+
+
+LIMITS = {"five_hour": {"used_percentage": 42.0, "resets_at": NOW + 2 * HOUR},
+          "seven_day": {"used_percentage": 81.0, "resets_at": NOW + 3 * 86400}}
+PLAN_DATA = {
+    "fresh": {"at": NOW - 3 * MIN, "rate_limits": LIMITS, "source": "probe"},
+    "stale": {"at": NOW - 2 * HOUR, "rate_limits": LIMITS, "source": "probe"},
+    "stale-of-unknown-age": {"rate_limits": LIMITS, "source": "probe"},
+    "reset-passed": {"at": NOW - 6 * HOUR, "rate_limits": {
+        "five_hour": {"used_percentage": 97.0, "resets_at": NOW - HOUR}, "seven_day": LIMITS["seven_day"]}},
+    "warning-credits": {"at": NOW - MIN, "rate_limits": LIMITS, "status": "allowed_warning", "overage": True},
+    "rejected-credits": {"at": NOW - MIN, "rate_limits": LIMITS, "status": "rejected", "overage": True},
+    "unreadable": UNREADABLE,
+}
+
+
+@pytest.mark.parametrize("state", sorted(PLAN_DATA))
+def test_the_logo_shows_at_99_columns_whatever_the_plan_data_says(tmp_path, state):
+    """At 99 columns the logo was left out while the plan data was stale: each limit row grew by
+    " · as of HH:MM", and Model usage, 91 columns wide, left the logo 3. Stale rows no longer grow (the
+    subtitle says how old the data is, in amber), so the logo shows in every state of the plan data,
+    beside a Model usage it never cuts short."""
+    p = Project(tmp_path)
+    midway(p)
+    p.usage(PLAN_DATA[state])
+    e = p.engine()
+    plain, geom, f, row = usage_row_at(e, 99)
+    assert geom is not None and geom[1] >= LOGO_MIN_COLS, geom
+    assert "…" not in plain and "as of" not in plain.split("╰")[0]  # no row carries the age
+    assert not cli.logo_left_out_with_room(testing.record_console(99), row, 99)
+
+
+def test_stale_plan_data_keeps_model_usage_as_wide_as_fresh_and_says_so_in_amber(tmp_path):
+    """The stale rows draw as wide as the fresh ones; the subtitle, faint while the data is fresh,
+    is amber once it is stale, and names an age it does not know."""
+    from lsw_mission_control.render.usage import usage_panel
+    from lsw_mission_control.theme import C
+
+    def amber_sgr() -> str:
+        h = C.AMBER.lstrip("#")
+        return "38;2;" + ";".join(str(int(h[i:i + 2], 16)) for i in (0, 2, 4))
+
+    p = Project(tmp_path)
+    midway(p)
+    widths, subtitles = {}, {}
+    for state in ("fresh", "stale", "stale-of-unknown-age"):
+        p.usage(PLAN_DATA[state])
+        e = p.engine()
+        console = testing.record_console(150)
+        widths[state] = cli.usage_fit(console, usage_panel(e.build_frame(150), 150), 150)[1]
+        plain, styled = testing.render_text(usage_panel(e.build_frame(150), 150), 150)
+        bottom = styled.splitlines()[-1]
+        subtitles[state] = (plain.splitlines()[-1], amber_sgr() in bottom)
+    assert widths["stale"] == widths["fresh"] and widths["stale-of-unknown-age"] <= widths["fresh"]
+    assert "plan data as of 14:10 · 3m ago · probe" in subtitles["fresh"][0] and not subtitles["fresh"][1]
+    assert "plan data as of 12:13 · 2h00 ago · probe" in subtitles["stale"][0] and subtitles["stale"][1]
+    assert "plan data of unknown age · probe" in subtitles["stale-of-unknown-age"][0]
+    assert subtitles["stale-of-unknown-age"][1]

@@ -64,9 +64,12 @@ Fixed before the first release:
   row: square when there is room, narrower when there is not (the drawing shrinks, in a panel as tall
   as Model usage), left out only when not even the smallest (5 rows, 12 columns of drawing) fits.
   At 99 columns it is 17 columns of drawing beside 10 rows; beside a Model usage with no plan data
-  it now fits in 80. A row that grows takes its room from the logo: stale plan data adds
-  `· as of HH:MM` (Model usage 91 columns), so a 99-column window has no logo until the plan data
-  is fresh again.
+  it now fits in 80. A row that grows takes its room from the logo, and stale plan data no longer
+  grows one: each limit row added `· as of HH:MM` (Model usage 91 columns), which left a 99-column
+  window no logo until the data was fresh again. Its rows keep their faint meters and muted
+  percentages, and the subtitle turns amber (`plan data as of 13:33 · 40m ago · probe`, or `plan
+  data of unknown age`), so at 99 columns the logo shows in every plan-data state (the widest, a
+  reset passed with no plan data since, is 81 columns).
 
 - `--self-check`, the reload gate, draws the dashboard at three window sizes, 150×50, 99×60 and
   80×40 (it drew 150×50 only), and at the tightest width the logo fits in, each twice: with nothing
