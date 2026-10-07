@@ -68,8 +68,10 @@ Fixed before the first release:
   grows one: each limit row added `· as of HH:MM` (Model usage 91 columns), which left a 99-column
   window no logo until the data was fresh again. Its rows keep their faint meters and muted
   percentages, and the subtitle turns amber (`plan data as of 13:33 · 40m ago · probe`, or `plan
-  data of unknown age`), so at 99 columns the logo shows in every plan-data state (the widest, a
-  reset passed with no plan data since, is 81 columns).
+  data of unknown age`), so at 99 columns the logo shows in every plan-data state. The widest is a
+  window that reset on an earlier day with no plan data since, whose row now reads `reset Sun 12:13 ·
+  no data since` (Model usage 80 columns, the logo from 97): it read `· no plan data since` (85),
+  which also left a 99-column window no logo.
 
 - `--self-check`, the reload gate, draws the dashboard at three window sizes, 150×50, 99×60 and
   80×40 (it drew 150×50 only), and at the tightest width the logo fits in, each twice: with nothing

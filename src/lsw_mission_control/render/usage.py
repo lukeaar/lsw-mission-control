@@ -45,7 +45,7 @@ def usage_panel(f: Frame, width: int):
             if resets and resets <= t_now:
                 # The window reset after the last plan data: its use since then is unknown.
                 g.add_row(label, meter(0.0, METER_W, C.FAINT) + Text("    ?%", style=C.FAINT)
-                          + Text(f"  reset {clock(resets)} · no plan data since", style=C.FAINT))
+                          + Text(f"  reset {clock(resets)} · no data since", style=C.FAINT))
                 continue
             col = C.GREEN if pct < 50 else C.AMBER if pct < 80 else C.RED
             # Stale: a faint meter and a muted share; how old the data is, the subtitle says in amber
@@ -121,9 +121,11 @@ def usage_row(console: Console, f: Frame, width: int, logo: LogoAnimator | None)
     columns. At 99 the logo gets 21 (17 of drawing beside 10 rows), the smallest fits from 94, the
     square from 104. The fixed cut-off this replaces (the logo from 100 columns, whatever Model usage
     held) left a 99-column window with no logo, and clipped the weekly row at 100 ("in …"). A row
-    that grows takes its room from the logo, never the reverse: a reset passed with no plan data since
-    81 (the logo from 98). Plan data gone stale no longer grows a row (it added " · as of HH:MM":
-    Model usage 91, the logo from 108); the subtitle says it, so at 99 the logo shows in every state."""
+    that grows takes its room from the logo, never the reverse: a window that reset on an earlier day
+    with no plan data since is the widest, 80 ("reset Sun 12:13 · no data since": the logo from 97; it
+    read "· no plan data since", 85, the logo from 102). Plan data gone stale no longer grows a row (it
+    added " · as of HH:MM": Model usage 91, the logo from 108); the subtitle says it, so at 99 the logo
+    shows in every state."""
     usage = usage_panel(f, width)
     if logo is None:
         return usage

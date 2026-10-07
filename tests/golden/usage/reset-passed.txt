@@ -1,5 +1,5 @@
 ╭─  Model usage  ──────────────────────────────────────────────────────────────────────────────────╮
-│ 5-hour       ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱    ?%  reset 13:13 · no plan data since                    │
+│ 5-hour       ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱    ?%  reset 13:13 · no data since                         │
 │ weekly       ▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱▱▱▱▱   40%   resets Tue 14:13 · in 1d00h                        │
 │                                                                                                  │
 │ tokens        output  input  cache writes  cache reads                                           │

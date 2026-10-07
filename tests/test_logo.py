@@ -164,6 +164,12 @@ PLAN_DATA = {
     "stale-of-unknown-age": {"rate_limits": LIMITS, "source": "probe"},
     "reset-passed": {"at": NOW - 6 * HOUR, "rate_limits": {
         "five_hour": {"used_percentage": 97.0, "resets_at": NOW - HOUR}, "seven_day": LIMITS["seven_day"]}},
+    # on an earlier day: the reset reads its weekday too ("reset Sun 12:13"), the widest row there is
+    "reset-passed-yesterday": {"at": NOW - 30 * HOUR, "rate_limits": {
+        "five_hour": {"used_percentage": 97.0, "resets_at": NOW - 26 * HOUR}, "seven_day": LIMITS["seven_day"]}},
+    "both-reset-on-earlier-days": {"at": NOW - 8 * 86400, "rate_limits": {
+        "five_hour": {"used_percentage": 97.0, "resets_at": NOW - 7 * 86400 - HOUR},
+        "seven_day": {"used_percentage": 99.0, "resets_at": NOW - 2 * 86400}}},
     "warning-credits": {"at": NOW - MIN, "rate_limits": LIMITS, "status": "allowed_warning", "overage": True},
     "rejected-credits": {"at": NOW - MIN, "rate_limits": LIMITS, "status": "rejected", "overage": True},
     "unreadable": UNREADABLE,
@@ -175,7 +181,8 @@ def test_the_logo_shows_at_99_columns_whatever_the_plan_data_says(tmp_path, stat
     """At 99 columns the logo was left out while the plan data was stale: each limit row grew by
     " · as of HH:MM", and Model usage, 91 columns wide, left the logo 3. Stale rows no longer grow (the
     subtitle says how old the data is, in amber), so the logo shows in every state of the plan data,
-    beside a Model usage it never cuts short."""
+    beside a Model usage it never cuts short. So it does after a reset on an earlier day with no plan
+    data since: that row read "· no plan data since" (Model usage 85, the logo from 102)."""
     p = Project(tmp_path)
     midway(p)
     p.usage(PLAN_DATA[state])
