@@ -370,6 +370,62 @@ def test_a_cycle_across_releases_is_broken_and_every_row_draws(tmp_path):
     assert row(plain, "Alpha") and row(plain, "Bravo") and "Mission control error" not in plain
 
 
+def test_a_planned_row_after_this_releases_item_draws_with_the_release_panel_off(tmp_path):
+    """The release panel switched off, a planned row that runs after one of its items still reads it."""
+    p = Project(tmp_path)
+    p.write_config("""
+        [release]
+        enabled = false
+        """)
+    p.plan({"release": "1.4.0", "items": [{"name": "Export to CSV", "key": "export", "build": 120}],
+            "next": {"release": "1.5.0", "items": [
+                {"key": "sync", "name": "Offline sync", "build": 60, "flags": ["after:export"]}]}})
+    p.notes()
+    p.agent("build:export", start_ago=30 * MIN, quiet_s=20)
+    plain, _ = testing.render_engine(p.engine(), 150)
+    assert "Mission control error" not in plain and "after export" in row(plain, "Offline sync")
+
+
+def test_a_planned_row_after_a_failed_release_item_has_no_finish_time(tmp_path):
+    """export failed (its re-run is the release's to count): sync, begun after it, reads its build with
+    no finish time of its own."""
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [{"name": "Export to CSV", "key": "export", "build": 120}],
+            "next": {"release": "1.5.0", "items": [
+                {"key": "sync", "name": "Offline sync", "build": 60, "flags": ["after:export"]}]}})
+    p.notes()
+    p.agent("build:export", status="failed", start_ago=3 * HOUR, quiet_s=2 * HOUR)
+    p.agent("build:sync", start_ago=10 * MIN, quiet_s=20, run="wf_run-s")
+    sync = row(next_text(p), "Offline sync")
+    assert "build" in sync and sync.rstrip(" │").endswith("—")
+
+
+def test_the_planned_panels_never_change_this_releases_rows(tmp_path):
+    """The release's rows are worked out once a frame and read by a planned row that runs after one of
+    them: drawing the planned panels leaves every one of them as it was."""
+    from lsw_mission_control.render.next_release import planned_rows
+    from lsw_mission_control.render.release import release_panel, release_rows
+
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [{"name": "Export to CSV", "key": "export", "build": 120,
+                                          "before": [["your sign-off", None, 0]]}],
+            "next": {"release": "1.5.0", "items": [
+                {"key": "sync", "name": "Offline sync", "build": 60, "flags": ["after:export"], "paused": True}]}})
+    p.notes()
+    f = p.engine().build_frame(150)
+    _items, progs = release_rows(f)
+
+    def state() -> list[tuple]:
+        return [(q.current, q.remaining, q.waiting, q.owner, q.paused) for q in progs]
+
+    before = state()
+    planned_rows(f)
+    next_panel(f, 150)
+    assert state() == before
+    plain = testing.render_text(release_panel(f, 150)[0], 150)[0]
+    assert "your sign-off" in row(plain, "Export") and "1 wait on you" in plain
+
+
 def at(t: float) -> str:
     return dt.datetime.fromtimestamp(t, tz=dt.timezone.utc).isoformat()
 

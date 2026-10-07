@@ -247,3 +247,48 @@ def test_a_hold_that_ended_soon_after_its_run_was_stopped_reads_not_resumed(tmp_
     p.run_end("wf_run-z", "killed", ago_s=10 * MIN)
     audit = row(release_text(p), "Accessibility audit")
     assert "hold ended" in audit and eta(audit) == "not resumed"
+
+
+def test_a_hold_that_ended_before_the_owners_stage_reads_that_stage(tmp_path):
+    """nod's hold ended an hour ago with nothing of it run, and its next stage is the owner's: it waits
+    on the owner (the header counts it), never "not resumed"."""
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [
+        {"name": "Nod one", "key": "nod", "build": 30, "before": [["your nod", None, 0]],
+         "paused_until": at(NOW - HOUR)}]})
+    p.notes()
+    plain = release_text(p)
+    assert "your nod" in row(plain, "Nod one") and "1 wait on you" in plain and "not resumed" not in plain
+
+
+def test_a_finished_item_held_to_a_time_adds_nothing(tmp_path):
+    """d is done, its hold a day off: what runs after it waits on nothing, and the release's finish is
+    n's 30 min, then the final merge (3h30) and the tag row (2h30)."""
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [
+        {"name": "Done one", "key": "d", "build": 30, "paused_until": at(NOW + 24 * HOUR)},
+        {"name": "Next one", "key": "n", "build": 30, "flags": ["after:d"]}]})
+    p.notes()
+    p.agent("build:d", status="done", start_ago=3 * HOUR, quiet_s=2 * HOUR)
+    p.agent("review:d", status="done", start_ago=2 * HOUR, quiet_s=90 * MIN, findings=[])
+    panel, release_at = release_panel(p.engine().build_frame(120), 120)
+    assert eta(row(testing.render_text(panel, 120)[0], "Next one")).startswith("~30m")
+    assert release_at - NOW == pytest.approx((30 + 210 + 150) * 60, abs=1)
+
+
+def test_a_begun_held_row_after_a_longer_wait_counts_the_longer(tmp_path):
+    """b, 20 of its 60 min of build run, is held until an hour from now and runs after a (9h50 of build
+    left). Its hold and its 40 min run beside that wait: b's time left is a's, so the release is out
+    9h50 from now, then the final merge and the tag row, not an hour and 40 min later (the hold and
+    the begun work added on top of the wait)."""
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [
+        {"name": "Alpha", "key": "a", "build": 600},
+        {"name": "Bravo", "key": "b", "build": 60, "flags": ["after:a"], "paused_until": at(NOW + HOUR)}]})
+    p.notes()
+    p.agent("build:a", start_ago=10 * MIN, quiet_s=20)
+    p.agent("build:b", start_ago=40 * MIN, quiet_s=20 * MIN, run="wf_run-b")
+    panel, release_at = release_panel(p.engine().build_frame(120), 120)
+    plain = testing.render_text(panel, 120)[0]
+    assert "~9h50" in row(plain, "Alpha") and "paused" in row(plain, "Bravo")
+    assert release_at - NOW == pytest.approx((590 + 210 + 150) * 60, abs=1)

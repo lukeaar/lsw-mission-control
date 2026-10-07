@@ -476,3 +476,22 @@ def test_agents_at_work_drops_an_agent_its_run_stopped_at_once(tmp_path):
     assert "build:startup" in agents_text() and "fix:export" in agents_text()
     p.run_end("wf_run-a", "killed", ago_s=4 * MIN)
     assert "build:startup" not in agents_text() and "fix:export" in agents_text()
+
+
+@pytest.mark.parametrize("quiet_after_end, stopped", ((60, True), (61, False)))
+def test_an_attempt_heard_from_a_minute_after_its_runs_end_is_its_last(tmp_path, quiet_after_end, stopped):
+    """The record stops an attempt last heard from up to a minute after the run's recorded end, no later."""
+    p = Project(tmp_path)
+    p.agent("build:a", start_ago=HOUR, quiet_s=10 * MIN - quiet_after_end)
+    p.run_end("wf_run-a", "killed", ago_s=10 * MIN)
+    p.finish_runs()
+    assert [a["status"] for a in scan_agents(p.projects, NOW)] == ["failed" if stopped else "running"]
+
+
+def test_a_record_in_another_session_never_stops_a_run(tmp_path):
+    """A run's journal in one session and a record of the same run id in another: the record is not its."""
+    p = Project(tmp_path)
+    p.agent("build:a", start_ago=HOUR, quiet_s=10 * MIN, session="sess-B")
+    p.run_end("wf_run-a", "killed", ago_s=10 * MIN, session="sess-A")
+    p.finish_runs()
+    assert [a["status"] for a in scan_agents(p.projects, NOW)] == ["running"]
