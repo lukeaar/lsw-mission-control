@@ -80,11 +80,12 @@ item is common), so the plan can carry its own explanations.
   real stage, or, while nothing of it has run since (no agent of it active since that time, even one
   that then died, or still at work, no job of it running), `hold ended` with `not resumed` where its
   finish would be (the header counts `N not resumed`). It keeps the time left it had while held, as
-  if it resumed now, and its agents are back in Agents at work. A row that waits on other work, or
-  on your go-ahead, reads that wait instead. Only work from that time on counts: an item resumed
-  early whose stage then finished before the hold's end reads `hold ended` until its next stage
-  starts (the plan keeps no start for a hold, so that cannot be told from a stage finished before
-  it). Take the hold out of the plan when you resume an item early.
+  if it resumed now, and its agents are back in Agents at work. A row with no stage stopped
+  part-way that waits on other work, or on your go-ahead, reads that wait instead (a stage stopped
+  part-way reads `hold ended` whatever the row waits on). Only work from that time on counts: an
+  item resumed early whose stage then finished before the hold's end reads `hold ended` until its
+  next stage starts (the plan keeps no start for a hold, so that cannot be told from a stage
+  finished before it). Take the hold out of the plan when you resume an item early.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 
@@ -114,12 +115,14 @@ so an item can wait on this release's work or another planned release's. A key n
 ignored.
 `build`/`review`/`fix` become stages only when their minutes are above 0. A planned item can be held
 as a release item can (`paused`, `paused_until`): it reads "paused" ("from <when>" for a hold with
-an end), is not under way, the header counts it (`N paused`), and its agents leave Agents at work.
+an end), is not under way, the header counts it (`N paused`), and its agents leave Agents at work
+(but for a label a later item shares with a nearer release's item or with other work: Agents at
+work names that one, and its agent stays).
 Begun, it keeps its time left, the hold's end counted as a wait beside the one on the work it runs
 after, so what runs after it waits for both; not begun, it has no finish time, as any planned item.
 Once its `paused_until` has passed with nothing of it run since, it reads `hold ended` · `not
-resumed` (`N not resumed`), unless it waits on other work, on the release before (a later item not
-begun) or on you, which it reads instead.
+resumed` (`N not resumed`), unless, with no stage of it stopped part-way, it waits on other work, on
+the release before (a later item not begun) or on you, which it reads instead.
 
 ### `later`: `[{release, about, items}, …]`
 

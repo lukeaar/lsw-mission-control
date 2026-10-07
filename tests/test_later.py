@@ -440,6 +440,34 @@ def test_a_planned_items_hold_that_ended_with_nothing_resumed_says_so(tmp_path):
     assert "design" in search and "hold ended" not in search
 
 
+def test_a_begun_planned_items_hold_that_ended_reads_so_whatever_it_runs_after(tmp_path):
+    """The same rows in the release and the next release: a long item at work, and one after it whose
+    design began 3 h ago and stopped 2 h ago, held until an hour ago, nothing of it run since. Both
+    read "hold ended" and "not resumed": a stage stopped part-way is not under way, whatever the row
+    runs after. The planned row read its design under way, with a finish time, counted under way."""
+    from lsw_mission_control.render.release import release_panel
+
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0",
+            "items": [{"name": "Slow one", "key": "slow", "build": 600},
+                      {"name": "Late one", "key": "late", "before": [["design", "design:late", 60]], "build": 60,
+                       "flags": ["after:slow"], "paused_until": at(NOW - HOUR)}],
+            "next": {"release": "1.5.0", "items": [
+                {"key": "icons", "name": "New icon set", "build": 600},
+                {"key": "polish", "name": "Polish the icons", "before": [["design", "design:polish", 60]],
+                 "build": 60, "flags": ["after:icons"], "paused_until": at(NOW - HOUR)}]}})
+    p.notes()
+    p.agent("build:slow", start_ago=10 * MIN, quiet_s=20)
+    p.agent("build:icons", start_ago=10 * MIN, quiet_s=20, run="wf_run-i")
+    p.agent("design:late", start_ago=3 * HOUR, quiet_s=2 * HOUR, run="wf_run-l")
+    p.agent("design:polish", start_ago=3 * HOUR, quiet_s=2 * HOUR, run="wf_run-p")
+    release = testing.render_text(release_panel(p.engine().build_frame(150), 150)[0], 150)[0]
+    nxt = next_text(p)
+    for line in (row(release, "Late one"), row(nxt, "Polish the icons")):
+        assert "hold ended" in line and line.rstrip(" │").endswith("not resumed"), line
+    assert "1 under way" in nxt and "1 not resumed" in nxt
+
+
 def test_a_planned_items_hold_is_read_from_the_plan():
     plan = parse_plan({"release": "1", "items": [], "next": {"release": "2", "items": [
         {"key": "a", "name": "A", "paused": True}, {"key": "b", "name": "B", "paused_until": "2026-10-04T13:00:00+10:00"},
@@ -467,3 +495,21 @@ def test_a_label_a_later_item_shares_keeps_naming_the_nearer_one():
     names = label_names(plan, FinalMergeCfg())
     assert (names["build:a"], names["build:n"], names["run:o"], names["build:l"]) == (
         "This release's A", "Next N", "Other O", "Later L")
+
+
+def test_holding_a_later_item_leaves_the_nearer_items_agent_at_work(tmp_path):
+    """cache is a key of this release's item and of a later one: build:cache names this release's
+    (above). Held, the later item takes its agents out of Agents at work, but not this one: the hold
+    took every label of the later item out, the one it shares too, and with it this release's build."""
+    from lsw_mission_control.render.agents import agents_panel
+
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [{"name": "Cache rework", "key": "cache", "build": 60}],
+            "later": [{"release": "1.6.0", "items": [
+                {"key": "cache", "name": "Later cache", "build": 30, "before": [["sketch", "sketch:cache", 10]],
+                 "paused": True}]}]})
+    p.notes()
+    p.agent("build:cache", start_ago=10 * MIN, quiet_s=20)
+    p.agent("sketch:cache", start_ago=10 * MIN, quiet_s=20, run="wf_run-s")
+    agents = testing.render_text(agents_panel(p.engine().build_frame(150), 150, []), 150)[0]
+    assert "build:cache" in agents and "Cache rework" in agents and "sketch:cache" not in agents

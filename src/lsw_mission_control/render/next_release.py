@@ -190,9 +190,11 @@ def planned_panel(f: Frame, width: int, r: int, title: str, after_release: str |
         elif row.owner_at is not None:
             p.current, p.waiting, p.owner = item.stages[row.owner_at][0], True, True
             waiting_owner += 1
-        elif row.stopped and row.wait is None and (row.begun or after_release is None):
-            # Its hold is over and nothing has resumed it (a row that waits on other work, or on the
-            # release before, reads that wait instead): the time it had while held, as if it resumed now.
+        elif row.stopped and not (p.waiting and (p.waits or (after_release is not None and not row.begun))):
+            # Its hold is over and nothing has resumed it, by the release panel's rule: a row with no
+            # stage of it stopped part-way that waits on other work, or on the release before, reads
+            # that wait instead; one with a stage stopped part-way is not under way, whatever it waits
+            # on. It keeps the time it had while held, as if it resumed now.
             p.current, p.failed, p.hold_ended = "hold ended", False, item.paused_until
             nended += 1
         elif not row.begun:

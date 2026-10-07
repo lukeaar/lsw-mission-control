@@ -41,8 +41,11 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
     for rel in f.plan.planned():
         for planned in rel.items:
             if planned.held(t_now):
+                # Only the labels it names in Agents at work (label_names): a key typed again in a later
+                # release keeps naming the nearer release's item, whose agent the later hold never stops.
                 for _name, spec, _mins in planned.stages:
-                    paused.update(spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else []))
+                    labels = spec if isinstance(spec, list) else ([spec] if isinstance(spec, str) else [])
+                    paused.update(label for label in labels if f.names.get(label, planned.name) == planned.name)
     running = [a for a in running if a["label"] not in paused and f"{a['run']}/{a['label']}" not in paused]
     # A retried agent, or a resumed run, starts a fresh attempt under the same label; the one it
     # replaced is not at work, even after its replacement has finished (so compare against every

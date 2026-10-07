@@ -265,12 +265,14 @@ Fixed before the first release:
   planned release.
 - A next or later release's item can be held, as a release item can (`paused`, `paused_until`): it
   reads `paused` (`from <when>` for a hold with an end), is not counted as under way, the header
-  counts it (`N paused`), and its agents leave Agents at work. Begun, it keeps its time left with
-  the hold's end counted, so what runs after it waits for both; a hold with an end ends on the clock,
-  and while nothing of the item has run since, it reads `hold ended` · `not resumed` (`N not
-  resumed`), unless it waits on other work, on the release before or on the owner. On a planned item
-  `paused` and `paused_until` used to change nothing: a stopped run read `design failed` · `needs
-  rerun`, and its agent stayed in Agents at work until it fell silent.
+  counts it (`N paused`), and its agents leave Agents at work (but for a label a later item shares
+  with a nearer release's item or with other work: Agents at work names that one, and its agent
+  stays). Begun, it keeps its time left with the hold's end counted, so what runs after it waits for
+  both; a hold with an end ends on the clock, and while nothing of the item has run since, it reads
+  `hold ended` · `not resumed` (`N not resumed`), unless, with no stage of it stopped part-way, it
+  waits on other work, on the release before or on the owner, as a release item does. On a planned
+  item `paused` and `paused_until` used to change nothing: a stopped run read `design failed` ·
+  `needs rerun`, and its agent stayed in Agents at work until it fell silent.
 - An agent whose run was stopped reads stopped at once. A stopped workflow writes nothing to its
   journal, so its agents read as at work, in Agents at work and in their stages, until they had been
   silent for `[agents] silent_stopped_min` (25 min): an item whose hold ended within those minutes of
