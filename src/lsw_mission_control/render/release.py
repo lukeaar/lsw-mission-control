@@ -9,6 +9,7 @@ from rich.text import Text
 
 from lsw_mission_control.progress import (
     Prog,
+    hold_left,
     in_wait_order,
     item_active_since,
     item_minutes,
@@ -122,18 +123,18 @@ def release_panel(f: Frame, width: int):
         # that has passed with nothing of it run since: its work is still stopped as it was held.
         held = it.held(t_now)
         stopped = held or (it.hold_ended(t_now) and not item_active_since(plan, it, labels, it.paused_until))
+        # The hold itself takes time: nothing of it runs before the hold ends. It is a wait beside the
+        # one on the work it runs after (counted once along a chain of rows held to one time).
         p = item_progress(plan, it, labels, now=t_now, cal=cal, default_fix_share=rc.fix_share,
-                          wait_before=0.0 if wait is None else wait[0], after=after, paused=stopped)
+                          wait_before=0.0 if wait is None else wait[0], after=after, paused=stopped,
+                          hold=hold_left(it, t_now))
         if i >= last and "owner_ok" in it.flags and not item_started(plan, it.key, labels):
             p.current, p.waiting = "your go-ahead", True
         if held and p.current != "done":
             # Held by the owner: its stopped agent is not a failure and it is not queued. It keeps its
             # time left, so the release's finish and what runs after it still count it.
             p.current, p.failed, p.paused = "paused", False, True
-            if it.paused_until is not None:
-                # The hold itself takes time: nothing of it runs before the hold ends.
-                p.remaining = max(0.0, it.paused_until - t_now) + (p.remaining or 0.0)
-                p.resume = it.paused_until
+            p.resume = it.paused_until
         elif stopped and p.current != "done" and not (p.waiting and (p.waits or p.current == "your go-ahead")):
             # The hold is over and nothing has resumed the work (a row that waits on other work, or on
             # the owner, reads that wait instead): neither paused, nor failed, nor queued. It keeps the

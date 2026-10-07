@@ -69,7 +69,9 @@ item is common), so the plan can carry its own explanations.
   release's finish and what runs after it count it.
 - `paused_until: "<ISO time with offset>"`: held until then (implies `paused`). The row says
   "from <when>", and its time left includes the hold, so what runs after it, and the release's
-  finish, move past the hold.
+  finish, move past the hold. The hold is a wait like any other: its begun stages resume after
+  it, and its stages not begun come after it and the work it runs after, so rows held to one time
+  along a chain of `after:` waits count the hold once, not once per row.
   Once that time has passed the hold is over, whatever `paused` says beside it: the row reads its
   real stage, or, while nothing of it has run since (no agent of it active since that time, even one
   that then died, or still at work, no job of it running), `hold ended` with `not resumed` where its

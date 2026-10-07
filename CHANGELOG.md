@@ -243,6 +243,13 @@ Fixed before the first release:
   stage, or `hold ended` with `not resumed` (the header counts `N not resumed`) while nothing of it
   has run since: no agent of it active since that time or still at work, no job of it running. It
   keeps the time left it had while held, and its agents are back in Agents at work.
+- A hold is counted once along a chain of rows held to one time. A row held until a time added the
+  hold to its time left on top of its wait on the row it runs after, whose time left already held the
+  same hold, so holding every row of a chain of `after:` waits added the hold again at each link:
+  three rows of an hour each, held to a day from now, ended three days and three hours out. The hold
+  is now a wait beside that one: the row's begun stages resume after the hold, and its stages not
+  begun come after both, so that chain ends a day and three hours out however many of its rows are
+  held, and the release's finish moves with it.
 - A row of many stages no longer pushes the names and the finish times out of its table. Its stages
   column took the room it needed and the names got what was left, down to nothing and below, which
   ran every row past the panel's edge and cut its finish time short (`~25m ·`): at 80 columns a

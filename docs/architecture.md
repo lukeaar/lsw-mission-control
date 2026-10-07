@@ -93,7 +93,8 @@ FinishedStore(path, readonly).merge(agents, plan, names, loaded, release_bound) 
 Calibration(fix_share): factors{build,review,fix}, fix_share, n; get(stage) matches only those three names
 calibrate(cal, items, labels)                         # in place: a factor moves only at >= 3 samples,
                                                       # the fix share only at >= 3 reviews
-stages_progress(stages, labels, *, now, cal, default_fix_share, wait_before, after, done_before, paused)
+stages_progress(stages, labels, *, now, cal, default_fix_share, wait_before, after, done_before, paused, hold)
+                                                      # hold: seconds until a hold ends, a wait beside wait_before
 job_file(path) -> JobFile(units, first, last, start) | None   # None: no progress file, the job has not
                                                       # begun; start: the file's birth time or earliest line
 wait_for([(ref, Prog)], rerun) -> (seconds | None, ref) | None   # what a row still waits for; None:
@@ -322,7 +323,8 @@ Panels:
   far, read `≥` in the row and the head; main's CI created after the release run never starts the
   row); milestone wording; held items (`paused`, and `paused_until` held
   until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
-  resumed` while nothing of the item has run since).
+  resumed` while nothing of the item has run since; the hold is a wait beside the one on the work
+  the row runs after, so a chain of rows held to one time counts it once).
 - Next release, then each later release (`later`) in order, each sizing its stage column by its own
   items, finished ones included (a later release never changes the panels before it): an item not
   yet begun waits on the release before (`[release] later_wait`), never this one; the unfinished

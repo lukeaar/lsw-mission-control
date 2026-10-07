@@ -205,3 +205,29 @@ def test_holds_golden(tmp_path, update_golden, width):
     plain, styled = testing.render_text(release_panel(p.engine().build_frame(width), width)[0], width)
     check(f"hold-ended/{width}.txt", plain, update_golden)
     check(f"hold-ended/{width}.ansi", styled, update_golden)
+
+
+@pytest.mark.parametrize("held", ("a", "ab", "abc"))
+def test_a_chain_of_rows_held_to_one_time_counts_the_hold_once(tmp_path, held):
+    """b runs after a and c after b, each an hour of build; each named row is held until a day from
+    now. The hold is a wait beside the one on the row before, so the chain ends a day and three hours
+    from now however many of its rows are held. It was added again at each held link: holding all
+    three moved the chain's end two days further on, and the release's finish with it."""
+    p = Project(tmp_path)
+    items = [{"name": "Alpha", "key": "a", "build": 60}, {"name": "Bravo", "key": "b", "build": 60, "flags": ["after:a"]},
+             {"name": "Charlie", "key": "c", "build": 60, "flags": ["after:b"]},
+             {"name": "Delta", "key": "d", "build": 10, "flags": ["after:c"]}]
+    for it in items:
+        if it["key"] in held:
+            it["paused_until"] = at(NOW + 24 * HOUR)
+    p.plan({"release": "1.4.0", "items": items})
+    p.notes()
+    engine = p.engine()
+    f = engine.build_frame(120)
+    panel, release_at = release_panel(f, 120)
+    plain = testing.render_text(panel, 120)[0]
+    assert eta(row(plain, "Delta")) == "~1d03h · Tue 17:23"  # c's end, then d's 10 min
+    for name in ("Alpha", "Bravo", "Charlie"):
+        assert ("paused" in row(plain, name)) is (name[0].lower() in held)
+    # the release's finish: the chain, then the final merge (3h30) and the tag row (2h30)
+    assert release_at - NOW == pytest.approx((24 * 60 + 3 * 60 + 10 + 210 + 150) * 60, abs=1)

@@ -225,7 +225,7 @@ def _stage_attempt(label: dict, paused: bool, prev_start: float) -> dict:
 
 def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibration | None, default_fix_share: float,
                     wait_before: float | None = 0.0, after: str = "", done_before: float = 0.0,
-                    paused: bool = False) -> Prog:
+                    paused: bool = False, hold: float = 0.0) -> Prog:
     """Progress through a sequence of stages. `cal` scales planned minutes by the release's
     calibration (release items only; None elsewhere); `done_before` is work already behind the
     first stage. `paused` (held by the owner): an unfinished stage is held, not running or
@@ -235,7 +235,14 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
     runs after, and that work's short name. The wait sits before the stages that have not begun:
     what has begun runs on beside it, so the row's time left is max(its begun stages', the wait)
     plus its stages not begun, never less than the wait. While nothing of its own runs, its stage
-    reads "after <name>"; a wait of None (that work has no finish time) leaves it none either."""
+    reads "after <name>"; a wait of None (that work has no finish time) leaves it none either.
+
+    `hold`: seconds until a hold with an end is over, nothing of the row running before then. Its
+    begun stages resume after the hold, beside the wait, and its stages not begun come after both:
+    max(the hold + its begun stages', the wait) plus its stages not begun. The hold is a wait like
+    any other, so a chain of rows held to one time counts it once: a row after a held one waits for
+    that one's time left, which already holds the hold, and its own hold runs beside that wait. The
+    share done (the bar) is the work's alone: a hold is no work."""
     wait_unknown = wait_before is None
     wait = 0.0 if wait_before is None else wait_before
     remaining = 0.0  # the time left of its stages that have begun (running, failed, held, a job part-done)
@@ -370,8 +377,9 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
     waiting = not current
     if waiting:
         current = f"after {after}" if after else "queued"
-    remaining = max(remaining, wait) + queued
-    fraction = progressed / (progressed + remaining) if (progressed + remaining) > 0 else 0.0
+    work = max(remaining, wait) + queued  # the share done is the work's: the hold is not counted in it
+    fraction = progressed / (progressed + work) if (progressed + work) > 0 else 0.0
+    remaining = max(remaining + max(0.0, hold), wait) + queued
     p = Prog(None if wait_unknown else remaining, current, marks, failed, fraction, max(0.0, over), waiting,
              start=min(starts) if starts else None)
     p.waits = bool(after)
@@ -435,14 +443,22 @@ def item_stages(plan: Plan, item: Item) -> list:
 
 
 def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Calibration, default_fix_share: float,
-                  wait_before: float | None = 0.0, after: str = "", paused: bool | None = None) -> Prog:
+                  wait_before: float | None = 0.0, after: str = "", paused: bool | None = None,
+                  hold: float = 0.0) -> Prog:
     """A release item: its "before" stages (measure, design), then build → review → fix,
     labelled build:<key> etc. `paused`: its stages are held (stages_progress()); by default while
-    the owner holds it (Item.held)."""
+    the owner holds it (Item.held). `hold`: seconds until its hold ends (stages_progress())."""
     if item.key is None:
         return Prog(0.0, "done", [("●", C.GREEN)] * 3, fraction=1.0)
     return stages_progress(item_stages(plan, item), labels, now=now, cal=cal, default_fix_share=default_fix_share,
-                           wait_before=wait_before, after=after, paused=item.held(now) if paused is None else paused)
+                           wait_before=wait_before, after=after, paused=item.held(now) if paused is None else paused,
+                           hold=hold)
+
+
+def hold_left(item, at: float) -> float:
+    """Seconds until a held item's hold ends: 0 for a hold with no end, or one not holding it at `at`.
+    `item` is anything with held() and paused_until (a release item, a planned one)."""
+    return max(0.0, item.paused_until - at) if item.held(at) and item.paused_until is not None else 0.0
 
 
 def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> bool:
