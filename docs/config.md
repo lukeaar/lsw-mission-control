@@ -50,7 +50,7 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[release.final_merge] stages` | `[[name, minutes]]` | `[["build",120],["review",30],["fix",60]]` | its planned stages |
 | `[plan] after_server` | str | the only plugin with a live job | the plugin whose live job `after_server` rows follow (a `[[plugins]]` name) |
 | `[agents] scan_window_h` | num | `48` | journals older than this are left to the finished store |
-| `[agents] silent_stopped_min` | num | `25` | a running agent silent longer than this has stopped |
+| `[agents] silent_stopped_min` | num | `25` | a running agent silent longer than this has stopped (one whose run the Workflow runtime recorded as ended, stopped then, reads stopped at once) |
 | `[agents] idle_amber_min` / `idle_red_min` | num | `20` / `55` | the "active" column's colours |
 | `[agents] rows` | int | `14` | more running agents than this: the quiet ones first, then `+N more` (at least 1) |
 | `[test_logs] globs` | [str] | `["{scratch}/*/scratchpad/*.log"]` | `{scratch}` and `{root}` are filled in (no other `{…}`) |

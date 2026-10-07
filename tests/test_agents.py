@@ -22,7 +22,7 @@ from lsw_mission_control.config import FinalMergeCfg
 from lsw_mission_control.plan import EMPTY_PLAN, parse_plan
 
 from conftest import NOW
-from scenarios import HOUR, MIN, Project, ts
+from scenarios import HOUR, MIN, Project, midway, ts
 
 
 def test_scan_reads_journal_kinds_and_transcripts(tmp_path):
@@ -417,3 +417,62 @@ def test_readonly_never_writes_a_release_change(tmp_path):
     before = path.read_text()
     out = merge(FinishedStore(path, readonly=True), SHIPPED_FM, plan2())
     assert path.read_text() == before and not FM & set(latest_by_label(out, NOW, 25 * MIN))
+
+
+# ── a run's recorded end ─────────────────────────────────────────────────────────────────────────
+@pytest.mark.parametrize("status", ("killed", "completed", "failed"))
+def test_an_attempt_its_run_stopped_reads_failed_at_once(tmp_path, status):
+    """The Workflow runtime records a run's end (`<session>/workflows/<run>.json`) as it stops it, and
+    the journal says nothing more. An attempt cut off then (its last line 2 s after the record's time)
+    read running until it had been silent for `silent_stopped_min`: it reads failed at once. One begun
+    after the record (a resumed run's), and one still writing two minutes after it, read as before; so
+    does every attempt of a run with no record, with a status that is no end, or with a record that
+    does not parse."""
+    p = Project(tmp_path)
+    p.agent("build:a", start_ago=HOUR, quiet_s=10 * MIN - 2)
+    p.agent("review:a", status="done", start_ago=2 * HOUR, quiet_s=HOUR)
+    p.agent("fix:a", start_ago=5 * MIN, quiet_s=20)
+    p.agent("check:a", start_ago=HOUR, quiet_s=8 * MIN)
+    p.run_end("wf_run-a", status, ago_s=10 * MIN)
+    p.agent("build:b", start_ago=HOUR, quiet_s=10 * MIN, run="wf_run-b")
+    p.agent("build:c", start_ago=HOUR, quiet_s=10 * MIN, run="wf_run-c")
+    p.run_end("wf_run-c", "running", ago_s=10 * MIN)
+    p.agent("build:d", start_ago=HOUR, quiet_s=10 * MIN, run="wf_run-d")
+    p.run_end("wf_run-d", record="{not json")
+    p.finish_runs()
+    got = {a["label"]: a["status"] for a in scan_agents(p.projects, NOW)}
+    assert got == {"build:a": "failed", "review:a": "done", "fix:a": "running", "check:a": "running",
+                   "build:b": "running", "build:c": "running", "build:d": "running"}
+    # the label reads it as an attempt that died: failed, where the silence rule would wait 15 min more
+    assert latest_by_label(scan_agents(p.projects, NOW), NOW, 25 * MIN)["wf_run-b/build:b"]["status"] == "running"
+    assert latest_by_label(scan_agents(p.projects, NOW), NOW, 25 * MIN)["build:a"]["status"] == "failed"
+
+
+def test_a_run_end_with_no_time_is_the_records_own(tmp_path):
+    """A record with no readable `timestamp` ended when it was written."""
+    p = Project(tmp_path)
+    p.agent("build:a", start_ago=HOUR, quiet_s=10 * MIN)
+    p.run_end("wf_run-a", record={"status": "killed", "timestamp": "soon"})
+    rec = p.projects / "sess-1" / "workflows" / "wf_run-a.json"
+    os.utime(rec, (NOW - 10 * MIN, NOW - 10 * MIN))
+    p.finish_runs()
+    assert [a["status"] for a in scan_agents(p.projects, NOW)] == ["failed"]
+    rec.write_text(json.dumps({"status": "killed"}))
+    os.utime(rec, (NOW - 20 * MIN, NOW - 20 * MIN))  # written before the attempt went quiet: not its stop
+    assert [a["status"] for a in scan_agents(p.projects, NOW)] == ["running"]
+
+
+def test_agents_at_work_drops_an_agent_its_run_stopped_at_once(tmp_path):
+    """midway's run a was stopped 4 min ago: build:startup, last heard from then, leaves Agents at work
+    at once; fix:export, writing 40 s ago, long after it, stays (the record does not stop it)."""
+    from lsw_mission_control.render.agents import agents_panel
+
+    p = Project(tmp_path)
+    midway(p)
+
+    def agents_text() -> str:
+        return testing.render_text(agents_panel(p.engine().build_frame(120), 120, []), 120)[0]
+
+    assert "build:startup" in agents_text() and "fix:export" in agents_text()
+    p.run_end("wf_run-a", "killed", ago_s=4 * MIN)
+    assert "build:startup" not in agents_text() and "fix:export" in agents_text()

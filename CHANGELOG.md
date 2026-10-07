@@ -268,6 +268,15 @@ Fixed before the first release:
   resumed`), unless it waits on other work, on the release before or on the owner. On a planned item
   `paused` and `paused_until` used to change nothing: a stopped run read `design failed` · `needs
   rerun`, and its agent stayed in Agents at work until it fell silent.
+- An agent whose run was stopped reads stopped at once. A stopped workflow writes nothing to its
+  journal, so its agents read as at work, in Agents at work and in their stages, until they had been
+  silent for `[agents] silent_stopped_min` (25 min): an item whose hold ended within those minutes of
+  the stop read its stage running, with a finish time, instead of `hold ended` · `not resumed`. The
+  Workflow runtime records a run's end as it stops it (`<session>/workflows/<run>.json`: `killed`, or
+  `completed` or `failed`, with its time), and an attempt the journal leaves running that began
+  before that end, and was last heard from at most a minute after it, now reads as stopped then.
+  One begun after it (a resumed run's) or still writing after it reads as before, and a run cut off
+  with no record (a crash, a power cut) still waits out the silence.
 - A hold is counted once along a chain of rows held to one time. A row held until a time added the
   hold to its time left on top of its wait on the row it runs after, whose time left already held the
   same hold, so holding every row of a chain of `after:` waits added the hold again at each link:

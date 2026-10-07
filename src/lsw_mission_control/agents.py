@@ -25,6 +25,14 @@ if TYPE_CHECKING:
 # transcript path -> ((size, mtime), its facts): one entry per transcript, not one per change of it
 # (a dashboard runs for days), and scan_agents drops the transcripts it no longer sees.
 _ts_cache: dict = {}
+# a run's end record -> ((size, mtime), when it ended or None), dropped as _ts_cache's entries are
+_end_cache: dict = {}
+# A run's record says it has ended (the Workflow runtime writes it when a run completes, is stopped,
+# or fails); any other status is not read as an end.
+RUN_ENDED = ("completed", "killed", "failed")
+# An attempt still writing its transcript this long after its run's recorded end was not stopped by it
+# (measured: the attempts a stop cut off wrote their last line within 9 s of the record's time).
+END_SLACK_S = 60.0
 # A log belongs to the agent whose shell command WRITES it (> x.log, >> x.log, | tee x.log).
 _LOG_WRITE = re.compile(r"(?:>>?|\btee\s+(?:-a\s+)?)\s*[^\s;|&<>]*?([\w.-]+)\.log\b")
 TAIL_BYTES = 200_000
@@ -88,16 +96,58 @@ def transcript_facts(path: Path) -> tuple[float | None, float | None, str, froze
     return facts
 
 
+def run_ended(run_dir: Path) -> float | None:
+    """When the run whose journal is in `run_dir` (`<session>/subagents/workflows/<run>`) ended, as the
+    Workflow runtime records it (epoch seconds), or None while there is no such record: the run goes
+    on, or was cut off with nothing written (a crash, a power cut). A stopped run writes nothing to its
+    journal, but the runtime writes `<session>/workflows/<run>.json` as a run ends: `status`
+    "completed", "killed" (stopped) or "failed", and `timestamp`, when (else the file's own time). A
+    run resumed later keeps that record while its new attempts, begun after it, run."""
+    path = run_dir.parent.parent.parent / "workflows" / f"{run_dir.name}.json"
+    try:
+        st = path.stat()
+    except OSError:
+        _end_cache.pop(str(path), None)
+        return None
+    key = (st.st_size, st.st_mtime)
+    hit = _end_cache.get(str(path))
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    end = None
+    try:
+        rec = json.loads(path.read_text())
+    except (OSError, ValueError):
+        rec = None
+    if isinstance(rec, dict) and rec.get("status") in RUN_ENDED:
+        try:
+            end = iso(str(rec["timestamp"]))
+        except (KeyError, TypeError, ValueError, OverflowError):
+            end = st.st_mtime  # written as the run ended
+    _end_cache[str(path)] = (key, end)
+    return end
+
+
+def stopped_with_run(a: dict, end: float | None) -> bool:
+    """An attempt with no end of its own (its journal says it runs) that its run's recorded end
+    stopped: begun before that end, and last heard from by END_SLACK_S after it at the latest. One
+    begun after it belongs to a resumed run; one still writing well after it was not stopped by it,
+    and the silence rule (latest_by_label) is left to tell."""
+    return (end is not None and a["status"] == "running" and a.get("t0") is not None and a.get("t1") is not None
+            and a["t0"] < end and a["t1"] <= end + END_SLACK_S)
+
+
 def scan_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600) -> list[dict]:
     """Every workflow agent of the scan window (two days by default), with its status and timing.
 
     Every attempt is its own agent, with `seq`, where its "started" line is in the journal. An end
     event ("result", "failed", "error") ends the attempt it names (its agentId), else the latest
     attempt of its key; an attempt with no end when its key starts again is over (failed): the
-    runtime retried it. latest_attempts() orders a run's attempts by `seq`."""
+    runtime retried it, and so is one its run's recorded end stopped (run_ended(), stopped_with_run()):
+    a stopped run writes nothing to its journal. latest_attempts() orders a run's attempts by `seq`."""
     agents = []
     cutoff = now - window_s
     read: set = set()
+    ends: set = set()
     for run_dir in projects_dir.glob("*/subagents/workflows/wf_*"):
         journal = run_dir / "journal.jsonl"
         try:
@@ -136,14 +186,24 @@ def scan_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600) -> 
                     a["status"], a["result"] = "done", e.get("result")
                 else:
                     a["status"] = "failed"
+        # The run's end, as the runtime records it: read only for a run with an attempt the journal
+        # leaves running.
+        end = None
+        if any(a["status"] == "running" for a in attempts.values()):
+            ends.add(str(run_dir.parent.parent.parent / "workflows" / f"{run_dir.name}.json"))
+            end = run_ended(run_dir)
         for a in attempts.values():
             transcript = run_dir / f"agent-{a['id']}.jsonl"
             read.add(str(transcript))
             t0, t1, action, logs = transcript_facts(transcript)
             a.update(t0=t0, t1=t1, action=action, logs=logs)
+            if stopped_with_run(a, end):
+                a["status"] = "failed"  # stopped with its run: no silence to wait out
             agents.append(a)
     for gone in [k for k in _ts_cache if k not in read and k.startswith(str(projects_dir))]:
         del _ts_cache[gone]  # out of the window (or deleted): its facts are not needed again
+    for gone in [k for k in _end_cache if k not in ends and k.startswith(str(projects_dir))]:
+        del _end_cache[gone]
     return agents
 
 
@@ -339,7 +399,8 @@ def latest_by_label(agents: list[dict], now: float, silent_stopped_s: float) -> 
     that run's latest attempt in journal order: a later result supersedes an earlier failed or
     unfinished attempt, or an earlier result, and a later start supersedes a result. A bare label
     reads the latest attempt of the run whose attempts of it began last. A stopped workflow writes
-    nothing to its journal, so an agent silent for longer than `silent_stopped_s` reads as failed.
+    nothing to its journal, so an agent silent for longer than `silent_stopped_s` reads as failed
+    (one whose run's end the runtime recorded is failed already: scan_agents).
 
     A failed attempt died (an API error the runtime's retries did not get past, a skip, a stopped
     workflow): it is never a verdict on the work, which an agent returns as its result. So it never

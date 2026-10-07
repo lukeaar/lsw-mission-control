@@ -101,6 +101,15 @@ class Project:
             {"type": "tool_use", "name": name, "input": {"description": what}}]}})
         (d / f"agent-{aid}.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines))
 
+    def run_end(self, run: str, status: str = "killed", ago_s: float = 10 * MIN, session: str = "sess-1",
+                record: object = None) -> None:
+        """The Workflow runtime's record of a run's end (`<session>/workflows/<run>.json`): `status`
+        and `timestamp` `ago_s` before now, or `record` as it is (text: written raw)."""
+        p = self.projects / session / "workflows" / f"{run}.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        rec = {"runId": run, "status": status, "timestamp": ts(NOW - ago_s)} if record is None else record
+        p.write_text(rec if isinstance(rec, str) else json.dumps(rec))
+
     def finish_runs(self) -> None:
         for (session, run), rows in self.runs.items():
             d = self.projects / session / "subagents" / "workflows" / run

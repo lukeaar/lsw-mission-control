@@ -206,7 +206,13 @@ reads its own run's latest attempt; a bare label reads the latest attempt of the
 of it began last.
 
 A **failed** attempt died: an API error the runtime's retries did not get past, a skip, or silence
-past `[agents] silent_stopped_min` (its workflow stopped). That is never a verdict on the work, so it
+past `[agents] silent_stopped_min` (its workflow stopped). A stopped workflow writes nothing to its
+journal, but the Workflow runtime records the run's end as it stops it (`<session>/workflows/<run>.json`,
+status `killed`, `completed` or `failed`, with its time): an attempt the journal leaves running that
+began before that end, and was last heard from at most a minute after it, has stopped then, with no
+silence to wait out. One begun after it is a resumed run's, and one still writing after it was not
+stopped by it; a run cut off with no record (a crash, a power cut) waits out the silence. That is
+never a verdict on the work, so it
 never undoes an attempt that returned or still runs: the label reads the latest of those instead
 (in its own run for a run-qualified label, in any run for a bare one), and reads failed only when it
 has none. Two stages read the attempt that died all the same: a held item's (the owner stopped the

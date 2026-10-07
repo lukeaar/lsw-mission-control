@@ -231,3 +231,19 @@ def test_a_chain_of_rows_held_to_one_time_counts_the_hold_once(tmp_path, held):
         assert ("paused" in row(plain, name)) is (name[0].lower() in held)
     # the release's finish: the chain, then the final merge (3h30) and the tag row (2h30)
     assert release_at - NOW == pytest.approx((24 * 60 + 3 * 60 + 10 + 210 + 150) * 60, abs=1)
+
+
+def test_a_hold_that_ended_soon_after_its_run_was_stopped_reads_not_resumed(tmp_path):
+    """a11y's run was stopped 10 min ago and its hold ended 5 min ago: nothing has run since. Its agent,
+    silent for 10 min, read as still at work until 25 min of silence, so the row read its build running
+    with a finish time. The runtime's record of the stop ends it at once: "hold ended", "not resumed"."""
+    p = Project(tmp_path)
+    midway(p)
+    hold(p, a11y=-5 * MIN)
+    p.runs.clear()
+    p.agent("build:a11y", start_ago=HOUR, quiet_s=10 * MIN, run="wf_run-z")
+    audit = row(release_text(p), "Accessibility audit")
+    assert "build" in audit and "hold ended" not in audit and "·" in eta(audit)  # the silence rule alone
+    p.run_end("wf_run-z", "killed", ago_s=10 * MIN)
+    audit = row(release_text(p), "Accessibility audit")
+    assert "hold ended" in audit and eta(audit) == "not resumed"
