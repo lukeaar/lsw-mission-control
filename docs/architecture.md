@@ -81,6 +81,7 @@ C.GREEN …                                             # the palette in use; th
 Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, gh_timing, tokens, tokens_by_model,
                                                       # online (connectivity.Online)
 Plan(release, items, other, next, plugin_data, pre, final_merge_by_hand, later); .before(key) .release_before(i)
+                                                      # .planned(): next (if any), then later
 Item(name, key, build, review, fix, flags, before, paused, paused_until); .held(at) .hold_ended(at)   # a hold
                                                       # with an end ends on the clock, not at the plan's next read
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags)
@@ -101,7 +102,7 @@ wait_for([(ref, Prog)], rerun) -> (seconds | None, ref) | None   # what a row st
                                                       # nothing; a failed target has no time unless rerun
 in_wait_order(n, targets_of, compute, rerun) -> [Prog]   # each row after its targets (release, other, next)
 Frame(now, width, cfg, plan, plan_note, reload_note, notes, agents, labels, names, cal, store, flags,
-      live_job, live_job_error, plugin_errors, notes_note)
+      live_job, live_job_error, plugin_errors, notes_note, memo)   # memo: what its panels work out once and share
 Engine(cfg, flags, *, readonly, plugins, load_errors, no_plugins)
   .start_sources(probe) .ready() .build_frame(width) .frame(console) .safe_frame(console) .render(console)
   .errors_for_once() .watched_files() .network_critical() .connection() .safe_connection(); .ps_text (injectable),
@@ -327,7 +328,10 @@ Panels:
   until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
   resumed` while nothing of the item has run since; the hold is a wait beside the one on the work
   the row runs after, so a chain of rows held to one time counts it once).
-- Next release, then each later release (`later`) in order, each sizing its stage column by its own
+- Next release, then each later release (`later`) in order, their rows worked out together once a
+  frame (`planned_rows`, kept in `Frame.memo`, with the release's rows, `release_rows`, when a planned
+  row waits on one): an `after:<key>` names its own release's item, else the nearest release's
+  before it (this release's last), else the nearest after it; each sizing its stage column by its own
   items, finished ones included (a later release never changes the panels before it): an item not
   yet begun waits on the release before (`[release] later_wait`), never this one, unless its first
   stage is the owner's (`your …`), which it reads, counted as waiting on the owner; the unfinished

@@ -251,6 +251,15 @@ Fixed before the first release:
   that wait on the owner (`N wait on you`), these and `owner_ok`'s `your go-ahead`, as the next
   release's header does. In the release and the planned releases alike, a stage that failed before
   the owner's reads the failure (a planned row read `your go-ahead` beside its `needs rerun`).
+- An `after:<key>` in the next or a later release may name an item of another release: every planned
+  release's rows are worked out together, so a row waits on work in this release or in another
+  planned one. The key names an item of the row's own release, else of the nearest release before it
+  that has one (this release's items last), else of the nearest after it; a key no release holds is
+  still ignored, and a cycle is broken where it closes. Before, a key of another release was ignored:
+  a later item begun early read its own time while the next release's item it ran after had none,
+  and one not begun read the wait on the release before instead of `after <name>`. A release item's
+  `after:<key>` still names an item of this release only, so the release's finish never waits on a
+  planned release.
 - A hold is counted once along a chain of rows held to one time. A row held until a time added the
   hold to its time left on top of its wait on the row it runs after, whose time left already held the
   same hold, so holding every row of a chain of `after:` waits added the hold again at each link:

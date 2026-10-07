@@ -37,6 +37,7 @@ from lsw_mission_control.util import clock, human, iso, now
 
 if TYPE_CHECKING:
     from lsw_mission_control.engine import Frame
+    from lsw_mission_control.plan import Item
 
 
 def run_left(t0: float, minutes: float, t_now: float) -> tuple[float, float]:
@@ -98,12 +99,15 @@ def tag_milestone(g: dict, merge_end: float, merge_done: bool, ci_min: float, re
             "fraction": (t_now - start) / max(1.0, end - start)}
 
 
-def release_panel(f: Frame, width: int):
-    """(the panel, when the release is out)."""
+def release_rows(f: Frame) -> tuple[list[Item], list[Prog]]:
+    """The release's items in the order they are worked out, with their progress: the rest first, then
+    the after_all items (each waits for the worst of the rest), in plan order. Worked out once a frame
+    and kept: a planned release's row that runs after one of them reads it too (render/next_release.py)."""
+    memo = f.memo.get("release")
+    if memo is not None:
+        return memo
     plan, labels, cal, rc = f.plan, f.labels, f.cal, f.cfg.release
-    fm_cfg = rc.final_merge
     t_now = now()
-    # The rest first, then the after_all items (each waits for the worst of the rest), in plan order.
     items = [it for it in plan.items if "after_all" not in it.flags]
     last = len(items)
     items += [it for it in plan.items if "after_all" in it.flags]
@@ -153,6 +157,16 @@ def release_panel(f: Frame, width: int):
 
     # A failed item's time is its re-run's (the release's finish counts it), so what runs after it waits that long.
     progs = in_wait_order(len(items), targets_of, compute, rerun=True)
+    f.memo["release"] = (items, progs)
+    return items, progs
+
+
+def release_panel(f: Frame, width: int):
+    """(the panel, when the release is out)."""
+    plan, labels, cal, rc = f.plan, f.labels, f.cal, f.cfg.release
+    fm_cfg = rc.final_merge
+    t_now = now()
+    items, progs = release_rows(f)
     rows: list[tuple[str, Prog]] = [(it.name, p) for it, p in zip(items, progs)]
     sizes: list[float] = [item_minutes(plan, it, cal) for it in items]
     # A release item always has a finish time (it waits only on other release items, which have one,

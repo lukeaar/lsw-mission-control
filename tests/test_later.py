@@ -284,20 +284,90 @@ def test_a_long_item_keeps_every_name_and_finish_time_in_its_own_panel(tmp_path,
     assert width == 100 or "○─○─○─○─○─○─○─○…" in row(plain, "Long")
 
 
-def test_an_after_naming_another_releases_item_is_ignored(tmp_path):
-    """`after:<key>` names an item of the same release; one of another release's is ignored
-    (plan-schema.md), so search (1.6.0, begun early) reads its own stage and time with `after:sync`
-    (1.5.0, not begun) as without it. A wait across releases would need every planned panel's waits
-    worked out together, and a plan may already carry such keys: its own change, not this one."""
+def test_an_after_naming_another_releases_item_waits_for_it(tmp_path):
+    """`after:<key>` may name an item of another release: every planned release's rows are worked out
+    together. search (1.6.0, begun early, its design running) runs after sync (1.5.0, not begun: no
+    finish time), so its design runs on beside the wait and it has none either; the rollout, not
+    begun, reads the wait on sync instead of the one on 1.5.0. The key was ignored: search read its own
+    time (~2h50 · 17:03) and the rollout "after 1.5.0"."""
     p = Project(tmp_path)
     later_releases(p)
-    before = row(later_text(p), "Search across workspaces")
     plan = load(p)
     for it in plan["later"][0]["items"]:
-        if it["key"] == "search":
+        if it["key"] in ("search", "rollout"):
             it["flags"] = ["after:sync"]
     p.plan(plan)
-    assert row(later_text(p), "Search across workspaces") == before and "~2h50 · 17:03" in before
+    plain = later_text(p)
+    search, rollout = row(plain, "Search across workspaces"), row(plain, "First week")
+    assert "design" in search and search.rstrip(" │").endswith("—")
+    assert "after offline" in rollout and rollout.rstrip(" │").endswith("—")
+
+
+def cross(tmp_path) -> Project:
+    """This release's export (90 of its 120 min of build left), 1.5.0's sync after it (begun: 10 min into
+    an hour of build) and 1.6.0's themes after sync (begun: 5 min into half an hour), and two not begun:
+    late after export, and lone after a key no release holds."""
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [{"name": "Export to CSV", "key": "export", "build": 120}],
+            "next": {"release": "1.5.0", "items": [
+                {"key": "sync", "name": "Offline sync", "build": 60, "flags": ["after:export"]}]},
+            "later": [{"release": "1.6.0", "items": [
+                {"key": "themes", "name": "Themes as plugins", "build": 30, "flags": ["after:sync"]},
+                {"key": "late", "name": "Late one", "build": 30, "flags": ["after:export"]},
+                {"key": "lone", "name": "Lone one", "build": 30, "flags": ["after:nowhere"]}]}]})
+    p.notes()
+    p.agent("build:export", start_ago=30 * MIN, quiet_s=20)
+    p.agent("build:sync", start_ago=10 * MIN, quiet_s=20, run="wf_run-s")
+    p.agent("build:themes", start_ago=5 * MIN, quiet_s=20, run="wf_run-t")
+    return p
+
+
+def test_a_planned_item_after_one_of_this_releases_waits_for_its_time(tmp_path):
+    """sync never finishes before export, this release's item it runs after: ~1h30, not its own ~50m;
+    themes, after sync in the release after, waits on through it (~1h30, not ~25m). late, not begun,
+    reads the wait on export; lone's key names nothing, so it reads the wait on 1.5.0."""
+    p = cross(tmp_path)
+    nxt, later = next_text(p), later_text(p)
+    assert "~1h30 · 15:43" in row(nxt, "Offline sync") and "build" in row(nxt, "Offline sync")
+    assert "~1h30 · 15:43" in row(later, "Themes as plugins")
+    assert "after export" in row(later, "Late one") and "after 1.5.0" in row(later, "Lone one")
+    # this release's own panel reads as it did: its items wait on nothing of a release after it
+    from lsw_mission_control.render.release import release_panel
+    release = testing.render_text(release_panel(p.engine().build_frame(150), 150)[0], 150)[0]
+    assert "~1h30 · 15:43" in row(release, "Export to CSV")
+
+
+def test_a_key_names_its_own_release_first_then_the_nearest_before(tmp_path):
+    """"cache" is an item of this release and of 1.5.0, one agent label for both (build:cache, 10 min in):
+    this release's has 50 of its hour left, 1.5.0's 110 of its two hours. 1.6.0's mirror (25 min left)
+    runs after 1.5.0's, the nearer release before it: ~1h50, not ~50m. 1.5.0's warm runs after its own
+    release's, and a key only a release after a row's holds still counts: 1.5.0's early runs after
+    1.6.0's mirror."""
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [{"name": "Old cache", "key": "cache", "build": 60}],
+            "next": {"release": "1.5.0", "items": [
+                {"key": "cache", "name": "New cache", "build": 120},
+                {"key": "warm", "name": "Warm it", "build": 30, "flags": ["after:cache"]},
+                {"key": "early", "name": "Early one", "build": 30, "flags": ["after:mirror"]}]},
+            "later": [{"release": "1.6.0", "items": [
+                {"key": "mirror", "name": "Mirror", "build": 30, "flags": ["after:cache"]}]}]})
+    p.notes()
+    p.agent("build:cache", start_ago=10 * MIN, quiet_s=20)
+    p.agent("build:mirror", start_ago=5 * MIN, quiet_s=20, run="wf_run-m")
+    nxt, later = next_text(p), later_text(p)
+    assert "~1h50 · 16:03" in row(nxt, "New cache") and "after new" in row(nxt, "Warm it")
+    assert "~1h50 · 16:03" in row(later, "Mirror") and "build" in row(later, "Mirror")
+    assert "after mirror" in row(nxt, "Early one")
+
+
+def test_a_cycle_across_releases_is_broken_and_every_row_draws(tmp_path):
+    p = Project(tmp_path)
+    p.plan({"release": "1.4.0", "items": [],
+            "next": {"release": "1.5.0", "items": [{"key": "a", "name": "Alpha", "build": 30, "flags": ["after:b"]}]},
+            "later": [{"release": "1.6.0", "items": [{"key": "b", "name": "Bravo", "build": 30, "flags": ["after:a"]}]}]})
+    p.notes()
+    plain, _ = testing.render_engine(p.engine(), 120)
+    assert row(plain, "Alpha") and row(plain, "Bravo") and "Mission control error" not in plain
 
 
 def test_a_planned_item_has_no_hold(tmp_path):

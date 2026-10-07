@@ -90,6 +90,11 @@ class Plan:
         """An item's stages before its build ([] for none)."""
         return list(self.pre.get(key, ())) if key is not None else []
 
+    def planned(self) -> list[NextRelease]:
+        """The releases after this one, in the order they ship: the next one (if the plan has one),
+        then each of `later`."""
+        return ([self.next] if self.next is not None else []) + list(self.later)
+
     def release_before(self, i: int) -> str:
         """The release `later[i]` comes after: the one before it in `later`, else the next release
         (this one, in a plan with no next release)."""

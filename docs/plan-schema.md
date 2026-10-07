@@ -59,7 +59,7 @@ item is common), so the plan can carry its own explanations.
   planned minutes (scaled by the release's calibration once 3 of a kind have finished).
 - `key: null` counts as done.
 - `before`: stages that precede the build (measure, design), in the stage shape below.
-- `flags`: `after:<key>` (one flag per item it runs after), `after_all` (after all of the rest),
+- `flags`: `after:<key>` (one flag per item it runs after, of this release only), `after_all` (after all of the rest),
   `owner_ok` (shows "your go-ahead" until it starts). See "Waits" below.
 - A fix whose review found nothing of severity blocker/major/minor is skipped (`–`); until the
   review is done its time is weighted by the fix share.
@@ -107,8 +107,11 @@ group whose items have all finished has no heading.
 A stage named `your …` with a null spec is the owner's ("wait on you"): an item whose first stage
 not yet behind it is the owner's, with nothing of it running and nothing else to wait for, reads it
 and has no finish time, begun or not (a stage that failed before it reads the failure).
-`after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below); the key is
-an item of the same release (one of another release's items is ignored).
+`after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below). The key names
+an item of the same release, else of the nearest release before it that has one (this release's
+`items` last), else of the nearest after it: every planned release's waits are worked out together,
+so an item can wait on this release's work or another planned release's. A key no release holds is
+ignored.
 `build`/`review`/`fix` become stages only when their minutes are above 0. A planned item has no
 hold: `paused` is read on `items` and `other` only, and `paused_until` on `items`.
 
@@ -122,7 +125,8 @@ before its own: its stage reads `after 1.5.0` (`[release] later_wait`, which may
 `"{release} installed"`), never this release, with no finish time. An item whose first stage is
 the owner's (`your …`) reads that stage instead and waits on you, as in `next` (the header counts
 it): a decision you can make now never waits out of sight for the release before to ship.
-`after:<key>` (an item of the same release) reads `after <name>`, as in `next`. Once work on an item begins it
+`after:<key>` (an item of this release, the next or another later one, as in `next`) reads
+`after <name>`. Once work on an item begins it
 reads as a next item does: its stage and its time left. The first later release comes after `next`
 (after this one, in a plan with no `next`). When a release ships, `next` becomes `items` and the
 first of `later` becomes `next`.

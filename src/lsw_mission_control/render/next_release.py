@@ -1,10 +1,11 @@
 """The releases after this one, each its own panel: the next release, then each later one (the
 plan's `later`), with their planned items, grouped, with their stages and state, and the finished
-ones as one row below the rest, as the release panel draws its own."""
+ones as one row below the rest, as the release panel draws its own. Every planned release's rows
+are worked out together (planned_rows()): an `after:<key>` may name an item of another release."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from rich.console import Group
 from rich.text import Text
@@ -16,7 +17,110 @@ from lsw_mission_control.util import now
 
 if TYPE_CHECKING:
     from lsw_mission_control.engine import Frame
-    from lsw_mission_control.plan import NextRelease
+    from lsw_mission_control.plan import NextItem
+
+
+class Planned(NamedTuple):
+    """One planned item's row, worked out with every planned release's (planned_rows())."""
+
+    prog: Prog
+    wait: tuple | None  # wait_for() of what it runs after: (its time left or None, its name); None once done
+    begun: bool  # a stage of it has begun
+    owner_at: int | None  # the stage it waits on the owner for (owner_stage()), when it waits on nothing else
+
+
+def planned_rows(f: Frame) -> list[list[Planned]]:
+    """Every planned release's rows (in Plan.planned() order), worked out together once a frame:
+    a row runs after each item its `after:<key>` flags name, whichever release that item is in. A key
+    names the item of the row's own release, else of the nearest release before it that has one (this
+    release's items last), else of the nearest after it; a key no release holds is ignored. Each row
+    is worked out after the rows it runs after (in_wait_order: a cycle, a typo, is broken where it
+    closes), and a target with no finish time (a planned item not begun, a failed one, one waiting on
+    the owner) leaves the row none either.
+
+    An item not yet begun has no finish time (planned, not scheduled); one begun never finishes
+    before the work it runs after."""
+    memo = f.memo.get("planned")
+    if memo is not None:
+        return memo
+    plan, labels, rc = f.plan, f.labels, f.cfg.release
+    t_now = now()
+    rels = plan.planned()
+    where: list[tuple[int, int]] = [(r, j) for r, rel in enumerate(rels) for j in range(len(rel.items))]
+    first: list[dict] = []  # per release: key -> its first item's index in `where`
+    g = 0
+    for rel in rels:
+        keys: dict = {}
+        for item in rel.items:
+            if item.key:
+                keys.setdefault(item.key, g)
+            g += 1
+        first.append(keys)
+    # This release's items, worked out by its own panel's rule (release_rows), only when a planned row
+    # runs after one of them.
+    this_keys = {it.key for it in plan.items if it.key}
+    wanted = [fl[6:] for rel in rels for item in rel.items for fl in item.flags if fl.startswith("after:")]
+    this: list = []
+    if any(k in this_keys for k in wanted):
+        from lsw_mission_control.render.release import release_rows
+
+        this = list(zip(*release_rows(f)))
+    this_index = {}
+    for i, (it, _p) in enumerate(this):
+        if it.key is not None:
+            this_index.setdefault(it.key, len(where) + i)
+    n_planned = len(where)
+
+    def resolve(r: int, key: str) -> int | None:
+        if key in first[r]:
+            return first[r][key]
+        for r2 in range(r - 1, -1, -1):
+            if key in first[r2]:
+                return first[r2][key]
+        if key in this_index:
+            return this_index[key]
+        for r2 in range(r + 1, len(rels)):
+            if key in first[r2]:
+                return first[r2][key]
+        return None
+
+    def item_of(i: int) -> NextItem:
+        r, j = where[i]
+        return rels[r].items[j]
+
+    def name_of(i: int) -> str:
+        return item_of(i).name if i < n_planned else this[i - n_planned][0].name
+
+    def targets_of(i: int) -> list[int]:
+        if i >= n_planned:
+            return []  # this release's rows are worked out already
+        r = where[i][0]
+        found = [resolve(r, fl[6:]) for fl in item_of(i).flags if fl.startswith("after:")]
+        return [t for t in found if t is not None and t != i]
+
+    out: list[list] = [[None] * len(rel.items) for rel in rels]
+
+    def compute(i: int, wait) -> Prog:
+        if i >= n_planned:
+            return this[i - n_planned][1]
+        r, j = where[i]
+        item = rels[r].items[j]
+        after = "" if wait is None else short_name(name_of(wait[1]), plan.items)
+        p = stages_progress(item.stages, labels, now=t_now, cal=None, default_fix_share=rc.fix_share,
+                            wait_before=0.0 if wait is None else wait[0], after=after)
+        begun = any(m[0] in ("●", "◉", "✕", "–") for m in p.marks)
+        # The first stage not yet behind it is the owner's ("your ...", no agent), nothing of it runs
+        # and it waits on nothing else: it waits on the owner, with no finish time (what runs after it
+        # has none either), begun or not, in the next release or a later one.
+        owner_at = owner_stage(item.stages, p) if wait is None else None
+        if not begun or owner_at is not None:
+            p.remaining = None
+        out[r][j] = Planned(p, None if wait is None else (wait[0], name_of(wait[1])), begun, owner_at)
+        return p
+
+    in_wait_order(n_planned + len(this), targets_of, compute)
+    f.memo["planned"] = out
+    return out
 
 
 def next_panel(f: Frame, width: int):
@@ -24,7 +128,7 @@ def next_panel(f: Frame, width: int):
     nxt = f.plan.next
     if not nxt or not nxt.items:
         return None
-    return planned_panel(f, width, nxt, f.cfg.release.next_title)
+    return planned_panel(f, width, 0, f.cfg.release.next_title)
 
 
 def later_panel(f: Frame, width: int, i: int):
@@ -33,14 +137,16 @@ def later_panel(f: Frame, width: int, i: int):
     rel = f.plan.later[i]
     if not rel.items:
         return None
-    return planned_panel(f, width, rel, f.cfg.release.later_title, f.plan.release_before(i))
+    return planned_panel(f, width, i + (f.plan.next is not None), f.cfg.release.later_title, f.plan.release_before(i))
 
 
-def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_release: str | None = None):
-    """A release after this one. `after_release`: the release it comes after, which its items not yet
-    begun wait on (None for the next release: its items wait on nothing but each other)."""
-    labels, rc = f.labels, f.cfg.release
-    t_now = now()
+def planned_panel(f: Frame, width: int, r: int, title: str, after_release: str | None = None):
+    """The planned release Plan.planned()[r]. `after_release`: the release it comes after, which its
+    items not yet begun wait on (None for the next release: its items wait on nothing but the items
+    they run after)."""
+    nxt = f.plan.planned()[r]
+    rows = planned_rows(f)[r]
+    rc = f.cfg.release
     # Planned items can have many stages: each planned release's panel sizes a stage column of its
     # own by its own items, so they never widen another panel's and squeeze its names out (a later
     # release's long item must not change the next release's panel). The panels line up whenever
@@ -49,39 +155,8 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
     t, bar_w = work_table("stages", width, f.plan, rc.final_merge, stages_w=max(STAGES_MIN, 2 * most - 1))
     live = done = waiting_owner = 0
     group, headed = None, False
-    # Each item after the items it runs after (one listed before them still waits for them). An
-    # item not started has no finish time (planned, not scheduled); one begun never finishes before
-    # the work it runs after, and has no finish time while that work has none.
-    index: dict = {}
-    for i, item in enumerate(nxt.items):
-        if item.key:
-            index.setdefault(item.key, i)
-    waits: dict = {}
-    begun: dict = {}
-    owner_at: dict = {}
-
-    def targets_of(i: int) -> list[int]:
-        return [index[fl[6:]] for fl in nxt.items[i].flags if fl.startswith("after:") and fl[6:] in index]
-
-    def compute(i: int, wait) -> Prog:
-        item = nxt.items[i]
-        waits[i] = wait
-        after = "" if wait is None else short_name(nxt.items[wait[1]].name, f.plan.items)
-        p = stages_progress(item.stages, labels, now=t_now, cal=None, default_fix_share=rc.fix_share,
-                            wait_before=0.0 if wait is None else wait[0], after=after)
-        begun[i] = any(m[0] in ("●", "◉", "✕", "–") for m in p.marks)
-        # The first stage not yet behind it is the owner's ("your ...", no agent), nothing of it runs
-        # and it waits on nothing else: the row waits on the owner, wherever that stage sits in the
-        # row, begun or not, in the next release or a later one (owner_stage, the release panel's rule
-        # too): no finish time (what runs after it has none either).
-        owner_at[i] = owner_stage(item.stages, p) if wait is None else None
-        if not begun[i] or owner_at[i] is not None:
-            p.remaining = None
-        return p
-
-    progs = in_wait_order(len(nxt.items), targets_of, compute)
-    for i, item in enumerate(nxt.items):
-        p, started, wait = progs[i], begun[i], waits[i]
+    for item, row in zip(nxt.items, rows):
+        p = row.prog
         if p.current == "done":
             # Every finished item is one row below the rest, as the release's are; a group's heading
             # shows only over rows still drawn.
@@ -92,17 +167,15 @@ def planned_panel(f: Frame, width: int, nxt: NextRelease, title: str, after_rele
             if group:
                 t.add_row(Text(group, style=C.FAINT), "", "", "", "")
                 headed = True
-        blocking = wait is not None
-        if owner_at[i] is not None:
-            p.current, p.waiting, p.owner = item.stages[owner_at[i]][0], True, True
+        if row.owner_at is not None:
+            p.current, p.waiting, p.owner = item.stages[row.owner_at][0], True, True
             waiting_owner += 1
-        elif not started:
+        elif not row.begun:
             # Planned, not scheduled: no finish time. The first unfinished stage says what it waits
-            # for (one named "your ..." is the owner's, read above). A later release's item waits on
-            # the release before it.
+            # for. A later release's item waits on the release before it.
             first = item.stages[0] if item.stages else None
-            if blocking:
-                p.current = f"after {short_name(nxt.items[wait[1]].name, f.plan.items)}"
+            if row.wait is not None:
+                p.current = f"after {short_name(row.wait[1], f.plan.items)}"
             elif after_release is not None:
                 p.current = rc.later_wait.format(release=after_release)
             elif first is not None and first[1] is None:

@@ -71,6 +71,10 @@ class Frame:
     live_job_error: str | None = None  # the live job's plugin failed this frame ("Type: message")
     plugin_errors: dict[str, list[str]] = field(default_factory=dict)  # plugin name -> ["Type: message"]
     notes_note: str = ""  # why the notes file did not load ("" when it did); `notes` are then the last good
+    # What the frame's panels work out once and share: the release's rows, which the planned releases'
+    # rows can wait on (render/release.py release_rows), and the planned releases' rows, worked out
+    # together (render/next_release.py planned_rows).
+    memo: dict = field(default_factory=dict)
 
 
 def _overrides(plugin: Plugin, method: str) -> bool:
