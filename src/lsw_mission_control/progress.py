@@ -112,6 +112,10 @@ _T_MIN, _T_MAX = 946_684_800.0, 4_102_444_800.0  # 2000-01-01, 2100-01-01 (UTC)
 # takes over as they come in, weighed against the plan as if the plan were this share of the job's
 # units (at least one). One unit of a long job, or the first of several run at once, is not a pace.
 PACE_PRIOR = 0.1
+# A job's progress file made at most this long after the stages before it began was made at launch,
+# ahead of its turn: a pipeline makes its jobs' files one after another (measured: one wrote its two
+# progress files and its eta file within the same second). One made later was launched beside them.
+LAUNCH_SLACK_S = 60.0
 
 
 class JobFile(NamedTuple):
@@ -232,11 +236,14 @@ def _stage_attempt(label: dict, paused: bool, prev_start: float) -> dict:
 
 def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibration | None, default_fix_share: float,
                     wait_before: float | None = 0.0, after: str = "", done_before: float = 0.0,
-                    paused: bool = False, hold: float = 0.0) -> Prog:
+                    paused: bool = False, hold: float = 0.0, unfinished_before: bool = False) -> Prog:
     """Progress through a sequence of stages. `cal` scales planned minutes by the release's
     calibration (release items only; None elsewhere); `done_before` is work already behind the
     first stage. `paused` (held by the owner): an unfinished stage is held, not running or
-    failed, and its fill stops at its last activity.
+    failed, and its fill stops at its last activity. `unfinished_before`: an unfinished stage whose
+    start is not known comes before these (a plugin's live job, which an after_server row's first stage
+    is: render/other.py, with its time left as the wait): a detached job here with no unit done waits
+    for its turn behind it, whenever its file was made, and its time comes after the wait.
 
     `wait_before`/`after`: what the row still waits for (wait_for()): the time left of the work it
     runs after, and that work's short name. The wait sits before the stages that have not begun:
@@ -261,6 +268,11 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
     over = 0.0
     prev_review = None
     prev_start = 0.0  # the latest start of any earlier stage
+    # The latest start of the stages so far (one done by hand: its time), against which a job's file was
+    # made at launch or after; and whether one of them is unfinished and has not begun, its time after
+    # the wait, or comes before the row (`unfinished_before`): a job after it was made before it began.
+    launched = 0.0
+    unbegun = unfinished_before
     starts, ends = [], []
     label_sets = [[] if isinstance(sp, dict) else sp if isinstance(sp, list) else ([sp] if sp else [])
                   for _n, sp, _p in stages]
@@ -275,6 +287,7 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
             # and a review done by hand records no findings, so whether a fix is needed is not known.
             marks.append(("●", C.GREEN))
             ends.append(done_at)
+            launched = max(launched, done_at)
             progressed += minutes * 60
             if name == "review":
                 prev_review = None
@@ -290,10 +303,15 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
             if job is None:  # no progress file, nothing after it begun: the job has not started
                 queued += minutes * 60
                 marks.append(("○", C.FAINT))
+                unbegun = True
                 continue
             n, start = job.units, job.start
             starts.append(start)
             prev_start = max(prev_start, start)  # a later stage that ran before the job began runs again
+            # Made at launch, ahead of its turn: its file made by LAUNCH_SLACK_S after the latest start of
+            # the stages before it, or before one of them that has not begun (or none of them has a start).
+            at_launch = unbegun or not launched or start <= launched + LAUNCH_SLACK_S
+            launched = max(launched, start)
             if n >= total:  # a detached job is done only when every unit is (stages can overlap)
                 marks.append(("●", C.GREEN))
                 if job.last is not None:
@@ -301,16 +319,16 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                 progressed += (job.last - start) if job.last is not None and job.last > start else minutes * 60
                 continue
             # Running from the moment its file exists, even with no unit finished yet, and timed from its
-            # own start. Its file can be made before its turn (a pipeline that makes every job's file at
-            # launch): with no unit done it waits for its turn while a stage before it is unfinished, with
-            # no time so far (so no overrun) and its whole plan still to come. Its turn starts when the
-            # last of the stages before it finished, if that is after its file was made; a unit finished
-            # before then shows it ran beside them, so it is timed from its file.
-            turn = max([start, *ends]) if all(m[0] in ("●", "–") for m in marks) else None
-            if turn is not None and (job.first is None or job.first >= turn):
-                own = turn
+            # own start. A file made at launch (a pipeline that makes every job's file then) is made
+            # before its turn: with no unit done it waits for its turn while a stage before it is
+            # unfinished. Its turn starts when the last of the stages before it finished; a unit finished
+            # before then shows it ran beside them, so it is timed from its file, as one made after the
+            # stages before it began is (launched beside them).
+            if not unfinished_before and all(m[0] in ("●", "–") for m in marks):
+                turn = max([start, *ends]) if at_launch else start
+                own = turn if job.first is None or job.first >= turn else start
             else:
-                own = start if n else None  # None: waiting for its turn
+                own = None if at_launch and not n else start  # None: waiting for its turn
             elapsed = 0.0 if own is None else max(0.0, now - own)
             projected = eta_from_json(spec.get("eta_json"), spec.get("eta_key", "projected_finish_utc"), now)
             # Its planned minutes, as an agent's stage has: past them, at least 10 min, or a quarter
@@ -337,8 +355,19 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                 left = planned_left  # no unit has finished to give a pace
                 if own is not None:  # an overrun counts only from its own start
                     over = max(over, elapsed - max(minutes, planned) * 60)
-            remaining += left
             progressed += elapsed
+            if own is None:
+                # Waiting for its turn: queued behind the stages before it, which keep the stage column
+                # and the running mark (no time so far, no overrun, its whole plan still to come). Its
+                # time comes after theirs: after the wait when one of them has not begun or comes
+                # before the row (a projection, a finish time, already counts from their end).
+                marks.append(("○", C.FAINT))
+                if unbegun and not projected:
+                    queued += left
+                else:
+                    remaining += left
+                continue
+            remaining += left
             current = f"{name} {n}/{total}"
             marks.append(("◉", C.ACCENT))
             continue
@@ -360,12 +389,14 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
             share = (cal.fix_share if cal is not None else default_fix_share) if (name == "fix" and needs_fix is None) else 1.0
             queued += minutes * 60 * share
             marks.append(("○", C.FAINT))
+            unbegun = True
             continue
         prev_start = max(prev_start, latest)
         t0s = [a["t0"] for a in found if a["t0"]]
         t1s = [a["t1"] for a in found if a["t1"]]
         if t0s:
             starts.append(min(t0s))
+            launched = max(launched, min(t0s))
         if len(found) == len(specs) and all(a["status"] == "done" for a in found):
             marks.append(("●", C.GREEN))
             progressed += max(0.0, max(t1s) - min(t0s)) if t0s and t1s else minutes * 60

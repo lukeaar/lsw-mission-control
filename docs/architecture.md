@@ -98,8 +98,9 @@ FinishedStore(path, readonly).merge(agents, plan, names, loaded, release_bound) 
 Calibration(fix_share): factors{build,review,fix}, fix_share, n; get(stage) matches only those three names
 calibrate(cal, items, labels)                         # in place: a factor moves only at >= 3 samples,
                                                       # the fix share only at >= 3 reviews
-stages_progress(stages, labels, *, now, cal, default_fix_share, wait_before, after, done_before, paused, hold)
-                                                      # hold: seconds until a hold ends, a wait beside wait_before
+stages_progress(stages, labels, *, now, cal, default_fix_share, wait_before, after, done_before, paused, hold,
+                unfinished_before)                    # hold: seconds until a hold ends, a wait beside wait_before;
+                                                      # unfinished_before: a live job before them (after_server)
 job_file(path) -> JobFile(units, first, last, start) | None   # None: no progress file, the job has not
                                                       # begun; start: the file's birth time or earliest line
 wait_for([(ref, Prog)], rerun) -> (seconds | None, ref) | None   # what a row still waits for; None:

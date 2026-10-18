@@ -18,6 +18,7 @@ from lsw_mission_control.progress import (
     short_name,
     stages_active_since,
     stages_progress,
+    stages_started,
 )
 from lsw_mission_control.render.widgets import STAGES_MIN, finished_row, pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
@@ -123,7 +124,9 @@ def planned_rows(f: Frame) -> list[list[Planned]]:
         p = stages_progress(item.stages, labels, now=t_now, cal=None, default_fix_share=rc.fix_share,
                             wait_before=0.0 if wait is None else wait[0], after=after, paused=stopped,
                             hold=hold_left(item, t_now))
-        begun = any(m[0] in ("●", "◉", "✕", "–") for m in p.marks)
+        # A stage of it has begun: an agent of it is known, a job of it has its progress file (one waiting
+        # for its turn too, which reads ○), or one was done by hand.
+        begun = stages_started(item.stages, labels)
         # The first stage not yet behind it is the owner's ("your ...", no agent), nothing of it runs
         # and it waits on nothing else: it waits on the owner, with no finish time (what runs after it
         # has none either), begun or not, in the next release or a later one.

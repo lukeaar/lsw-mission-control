@@ -398,16 +398,20 @@ def test_an_empty_progress_file_runs_from_its_creation(tmp_path):
 def test_a_job_waiting_for_its_turn_reads_no_overrun(tmp_path, minutes):
     """its file made 10 h ago, at launch, while the stage before it still runs (20 min of its hour):
     no unit, no time so far, no overrun, and its whole plan still to come. Timed from its file it
-    read 10 h past its plan (a 0-minute one too), with 2 h 30 left (a quarter of its 10 h)."""
+    read 10 h past its plan (a 0-minute one too), with 2 h 30 left (a quarter of its 10 h). It is
+    queued (○), and the stage column is the stage's before it: it took both (◉, `rebuild 0/1200`)."""
     prog = tmp_path / "p.jsonl"
     made(prog, NOW - 10 * HOUR)
     stages = [("prep", "prep:x", 60.0), job(prog, minutes=minutes)]
     p = sp(stages, {"prep:x": a("prep:x", "running", NOW - 20 * MIN, NOW)})
-    assert [m[0] for m in p.marks] == ["◉", "◉"] and p.over == 0 and p.remaining == (40 + minutes) * MIN
-    assert p.fraction == pytest.approx(20 / (20 + 40 + minutes))
+    assert [m[0] for m in p.marks] == ["◉", "○"] and p.current == "prep" and not p.waiting
+    assert p.over == 0 and p.remaining == (40 + minutes) * MIN and p.fraction == pytest.approx(20 / (20 + 40 + minutes))
     # failed, or held, before it: still not its turn
     failed = {"prep:x": a("prep:x", "failed", NOW - 3 * HOUR, NOW - 2 * HOUR)}
-    assert sp(stages, failed).over == 0 and sp(stages, failed, paused=True).over == 0
+    p = sp(stages, failed)
+    assert p.over == 0 and p.failed and p.current == "prep failed" and [m[0] for m in p.marks] == ["✕", "○"]
+    p = sp(stages, failed, paused=True)
+    assert p.over == 0 and p.current == "prep" and [m[0] for m in p.marks] == ["◉", "○"]
 
 
 def test_a_jobs_turn_starts_when_the_stages_before_it_finished(tmp_path):
@@ -422,6 +426,74 @@ def test_a_jobs_turn_starts_when_the_stages_before_it_finished(tmp_path):
     made(prog, NOW - 20 * MIN)
     p = sp([("prep", "prep:x", 60.0), job(prog, minutes=30.0)], prep)
     assert p.over == 0 and p.remaining == 10 * MIN
+
+
+def test_a_job_made_after_the_stages_before_it_began_runs_beside_them(tmp_path):
+    """its file made 5 h ago, after prep began (6 h into its 8 h plan): launched beside it, so timed from
+    its file, 4 h past its 60 min plan, with a quarter of its 5 h left after prep's 2 h, as before the
+    waiting rule (which counted none of its 5 h: 3 h left, no overrun). Once prep is done it is still
+    timed from its file (the waiting rule timed it from prep's end)."""
+    prog = tmp_path / "p.jsonl"
+    made(prog, NOW - 5 * HOUR)
+    stages = [("prep", "prep:x", 480.0), job(prog, minutes=60.0)]
+    p = sp(stages, {"prep:x": a("prep:x", "running", NOW - 6 * HOUR, NOW)})
+    assert [m[0] for m in p.marks] == ["◉", "◉"] and p.current == "rebuild 0/1200"
+    assert p.over == 4 * HOUR and p.remaining == 3.25 * HOUR
+    p = sp(stages, {"prep:x": a("prep:x", "done", NOW - 6 * HOUR, NOW - HOUR)})
+    assert p.over == 4 * HOUR and p.remaining == 1.25 * HOUR
+    # made by LAUNCH_SLACK_S after prep began, it was made at launch: it waits
+    made(prog, NOW - 6 * HOUR + progress.LAUNCH_SLACK_S)
+    p = sp(stages, {"prep:x": a("prep:x", "running", NOW - 6 * HOUR, NOW)})
+    assert [m[0] for m in p.marks] == ["◉", "○"] and p.current == "prep" and p.remaining == 3 * HOUR
+
+
+def test_files_a_launch_makes_one_after_another_wait_their_turn(tmp_path):
+    """one script makes the sample's file, then the full run's 30 s later: the full run waits for the
+    sample. Made 2 min after it, it was launched beside the sample, and it is timed from its file."""
+    sample, full = tmp_path / "sample.jsonl", tmp_path / "full.jsonl"
+    made(sample, NOW - 10 * HOUR)
+    stages = [job(sample, total=80, minutes=900.0), job(full, total=353, minutes=60.0)]
+    made(full, NOW - 10 * HOUR + 30)
+    p = sp(stages, {})
+    assert [m[0] for m in p.marks] == ["◉", "○"] and p.over == 0 and p.remaining == 6 * HOUR
+    made(full, NOW - 10 * HOUR + 2 * MIN)
+    p = sp(stages, {})
+    assert [m[0] for m in p.marks] == ["◉", "◉"] and p.over == 10 * HOUR - 2 * MIN - HOUR
+
+
+def test_a_job_after_an_unfinished_stage_outside_its_row_waits_for_it(tmp_path):
+    """`unfinished_before` (a plugin's live job before an after_server row's later stages, its time left
+    the wait, its start not known): a job with no unit done waits for it whenever its file was made, its
+    time after the wait. On its own it ran from its file: 10 h against its hour. A unit done shows it
+    ran beside that work; a projection, a finish time, already holds the wait."""
+    prog = tmp_path / "p.jsonl"
+    made(prog, NOW - 10 * HOUR)
+    stages = [job(prog, total=100, minutes=60.0), ("verify", "verify:x", 30.0)]
+    p = sp(stages, {}, wait_before=2 * HOUR, unfinished_before=True)
+    assert [m[0] for m in p.marks] == ["○", "○"] and p.over == 0 and p.remaining == 3.5 * HOUR and p.waiting
+    assert sp(stages, {}, wait_before=2 * HOUR).over == 9 * HOUR
+    units(prog, [NOW - 5 * HOUR], NOW - 5 * HOUR)
+    p = sp(stages, {}, wait_before=2 * HOUR, unfinished_before=True)
+    assert [m[0] for m in p.marks] == ["◉", "○"] and p.current == "rebuild 1/100"
+    projected, eta = tmp_path / "q.jsonl", tmp_path / "eta.json"
+    made(projected, NOW - 10 * HOUR)
+    finishes(eta, projected_finish_utc=NOW + 5 * HOUR)
+    p = sp([job(projected, total=100, minutes=60.0, eta_json=str(eta))], {}, wait_before=2 * HOUR,
+           unfinished_before=True)
+    assert [m[0] for m in p.marks] == ["○"] and p.remaining == 5 * HOUR
+
+
+def test_a_job_waiting_behind_a_stage_not_begun_comes_after_the_rows_wait(tmp_path):
+    """a waiting job's time comes after the stages before it: behind one not begun, after the row's
+    wait (5 h) as that one's does, then prep's hour and its own 2 h (it read 6 h: its time ran beside
+    the wait); behind a begun one, right after that one, beside the wait"""
+    prog = tmp_path / "p.jsonl"
+    made(prog, NOW - 10 * HOUR)
+    stages = [("prep", "prep:x", 60.0), job(prog, minutes=120.0)]
+    p = sp(stages, {}, wait_before=5 * HOUR, after="merge")
+    assert [m[0] for m in p.marks] == ["○", "○"] and p.remaining == 8 * HOUR and p.current == "after merge"
+    p = sp(stages, {"prep:x": a("prep:x", "running", NOW - 20 * MIN, NOW)}, wait_before=5 * HOUR, after="merge")
+    assert [m[0] for m in p.marks] == ["◉", "○"] and p.remaining == 5 * HOUR and p.current == "prep"
 
 
 def test_a_unit_done_before_its_turn_shows_the_job_ran_beside_the_stages_before_it(tmp_path, monkeypatch):
@@ -472,7 +544,7 @@ def test_back_to_back_jobs_each_count_from_the_projected_end_of_the_stages_befor
               job(full, total=353, minutes=2670.0, eta_json=str(eta), eta_key="full_end"),
               ("check", "check:x", 60.0)]
     p = sp(stages, {})
-    assert [m[0] for m in p.marks] == ["◉", "◉", "○"] and p.remaining == 11 * HOUR
+    assert [m[0] for m in p.marks] == ["◉", "○", "○"] and p.remaining == 11 * HOUR and p.current == "rebuild 40/87"
     # the full run's projection is no later than the sample's end: it adds nothing (it ran beside it)
     finishes(eta, sample_end=NOW + 2 * HOUR, full_end=NOW + HOUR)
     assert sp(stages, {}).remaining == 3 * HOUR
@@ -501,7 +573,7 @@ def test_a_chain_of_projected_jobs_ends_at_the_latest_finish(tmp_path, monkeypat
     finishes(eta, first=NOW + 2 * HOUR, second=NOW + HOUR, third=NOW + 7 * HOUR)
     stages = [job(f, total=10, minutes=60.0, eta_json=str(eta), eta_key=k) for f, k in zip(files, ("first", "second", "third"))]
     p = sp(stages, {})
-    assert [m[0] for m in p.marks] == ["◉", "◉", "◉"] and p.remaining == 7 * HOUR and p.over == 0
+    assert [m[0] for m in p.marks] == ["◉", "○", "○"] and p.remaining == 7 * HOUR and p.over == 0
     # the first job's eta 2 h old (stale): 40 of its 80 units in 3 h give it 3 h 23 left (its pace
     # weighed against its plan), and the second's finish, 10 h from now, is still the row's
     units(files[0], [NOW - 60] * 40, NOW - 60)
@@ -512,7 +584,7 @@ def test_a_chain_of_projected_jobs_ends_at_the_latest_finish(tmp_path, monkeypat
     two = [job(files[0], total=80, minutes=500.0, eta_json=str(stale), eta_key="first"),
            job(files[1], total=10, minutes=2670.0, eta_json=str(eta), eta_key="second")]
     p = sp(two, {})
-    assert p.remaining == pytest.approx(10 * HOUR) and p.current == "rebuild 0/10"
+    assert p.remaining == pytest.approx(10 * HOUR) and p.current == "rebuild 40/80"
 
 
 def test_a_jobs_turn_starts_when_the_stage_before_it_was_done_by_hand(tmp_path):

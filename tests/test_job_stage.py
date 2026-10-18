@@ -95,8 +95,9 @@ def test_other_a_job_past_its_plan_with_no_unit_shows_the_overrun(tmp_path):
 def test_a_job_whose_file_was_made_at_launch_waits_for_its_turn(tmp_path, monkeypatch):
     """A pipeline that makes every job's progress file at launch: the full run's file is 70 h old while
     the sample before it still runs. The full run has not started: no overrun (it read `≥` with the
-    stage `full 0/353 +1d…`, 70 h since its file against its 44.5 h plan), and its whole plan is still
-    to come. Once the sample has finished its turn has come, and it is timed from the sample's end."""
+    stage `full 0/353 +1d…`, 70 h since its file against its 44.5 h plan), its whole plan is still to
+    come, and it is queued (○): the stage column names the sample, which runs (it read `full 0/353`,
+    ◉). Once the sample has finished its turn has come, and it is timed from the sample's end."""
     monkeypatch.setattr(progress, "created_at", lambda st: NOW - 70 * HOUR)
     p = Project(tmp_path)
     midway(p)
@@ -112,11 +113,94 @@ def test_a_job_whose_file_was_made_at_launch_waits_for_its_turn(tmp_path, monkey
     p.plan(plan)
     line = row(other_text(p), NAME)
     # the sample's 10 h, then the full run's whole 44.5 h, then the check's hour
-    assert "◉─◉─○" in line and "full 0/353" in line and "+" not in line and "≥" not in line and "~2d07h" in line
+    assert "◉─○─○" in line and "sample 40/80" in line and "full" not in line and "+" not in line and "≥" not in line
+    assert "~2d07h" in line
     # the sample's last unit 2 h ago: the full run's turn came then (42.5 h left), and the check's hour
     sample.write_text("".join(json.dumps({"t": NOW - 2 * HOUR}) + "\n" for _ in range(80)))
     line = row(other_text(p), NAME)
     assert "●─◉─○" in line and "full 0/353" in line and "+" not in line and "~1d19h" in line
+
+
+def full_run(p: Project, tmp_path, before: list) -> None:
+    """Other work's row: `before`, then a full run of 600 min whose progress file (no unit done) is 10 h
+    old, made at launch."""
+    full = tmp_path / "full.jsonl"
+    made(full, NOW - 10 * HOUR)
+    plan = release_plan()
+    plan["other"] = [{"name": NAME, "stages": [*before, ["full", {"progress": str(full), "total": 353}, 600]]}]
+    p.plan(plan)
+
+
+def test_a_job_waiting_for_its_turn_leaves_the_stage_column_to_the_stage_before_it(tmp_path):
+    """The waiting full run took the stage column and the running mark, so the stage before it read
+    against a stage not begun: prep's 2 h overrun as `full 0/353 +2h…`, and its failure as `full 0/353`
+    in red. Now the stage before it says so itself, and the full run is queued (○)."""
+    p = Project(tmp_path)
+    midway(p)
+    full_run(p, tmp_path, [["prep", "prep:full", 60]])
+    p.agent("prep:full", start_ago=3 * HOUR, quiet_s=60, run="wf_run-s")
+    line = row(other_text(p), NAME)
+    # prep: 3 h of its hour, so a quarter of its 3 h left (45 min), then the full run's 10 h
+    assert "◉─○" in line and "prep +2h00" in line and "full" not in line and "≥10h45" in line
+    (tmp_path / "b").mkdir()
+    p = Project(tmp_path / "b")
+    midway(p)
+    full_run(p, tmp_path / "b", [["prep", "prep:full", 60]])
+    p.agent("prep:full", status="failed", start_ago=3 * HOUR, quiet_s=2 * HOUR, run="wf_run-s")
+    line = row(other_text(p), NAME)
+    assert "✕─○" in line and "prep failed" in line and "needs rerun" in line and "full" not in line
+
+
+def test_a_sample_past_its_plan_shows_its_own_overrun_beside_the_waiting_full_run(tmp_path, monkeypatch):
+    """a sample (its file 70 h old, no unit done, 600 min, no eta) before the full run: the overrun is
+    the sample's (it read `full 0/353 +…`)"""
+    monkeypatch.setattr(progress, "created_at", lambda st: NOW - 70 * HOUR)
+    p = Project(tmp_path)
+    midway(p)
+    sample = tmp_path / "sample.jsonl"
+    sample.write_text("")
+    full_run(p, tmp_path, [["sample", {"progress": str(sample), "total": 80}, 600]])
+    line = row(other_text(p), NAME)
+    assert "◉─○" in line and "sample 0/80 +" in line and "full" not in line and "≥" in line
+
+
+def test_a_job_launched_beside_a_running_stage_shows_its_overrun(tmp_path):
+    """prep is 6 h into its 8 h plan; the job's file was made 5 h ago, after prep began, so it runs beside
+    it (a largest-first queue's first unit can take hours): 5 h of its own against its 60 min plan,
+    4 h over (as before the waiting rule, which counted none of its 5 h), and 3 h 15 left (prep's 2 h,
+    then a quarter of the job's 5 h)"""
+    p = Project(tmp_path)
+    midway(p)
+    job = tmp_path / "job.jsonl"
+    made(job, NOW - 5 * HOUR)
+    plan = release_plan()
+    plan["other"] = [{"name": NAME, "stages": [["prep", "prep:job", 480], ["index", {"progress": str(job), "total": 50}, 60]]}]
+    p.plan(plan)
+    p.agent("prep:job", start_ago=6 * HOUR, quiet_s=60, run="wf_run-s")
+    line = row(other_text(p), NAME)
+    assert "◉─◉" in line and "index 0/50 +4h…" in line and "≥3h15" in line
+
+
+def test_a_job_after_a_plugins_live_job_waits_for_it(tmp_path):
+    """midway's import (a plugin's live job, 2 h left) then a reindex job whose file (no unit done) was
+    made 10 h ago, at launch: it waits for the import. It read the import's stage with a 9 h overrun
+    (`import +9h00`, `≥3h00`): its 10 h since its file against its hour. Now: the import's 2 h, then
+    the reindex's hour, then verify's 30 min."""
+    p = Project(tmp_path)
+    midway(p)
+    reindex = tmp_path / "reindex.jsonl"
+    made(reindex, NOW - 10 * HOUR)
+    plan = release_plan()
+    plan["other"][0]["stages"] = [["import", None, 0], ["reindex", {"progress": str(reindex), "total": 100}, 60],
+                                  ["verify", "verify:import", 30]]
+    p.plan(plan)
+    line = row(other_text(p), "Nightly data import")
+    assert "◉─○─○" in line and "import" in line and "+" not in line and "~3h30" in line
+    # the import done: the reindex's turn has come, and it runs (a live job keeps no end, so it is timed
+    # from its file, as it always was)
+    p.plugin_state["job"] = "done"
+    line = row(other_text(p), "Nightly data import")
+    assert "●─◉─○" in line and "reindex 0/100" in line
 
 
 def test_next_release_an_item_whose_job_has_begun_is_under_way(tmp_path):
@@ -138,3 +222,21 @@ def test_next_release_an_item_whose_job_has_begun_is_under_way(tmp_path):
     plain = next_text()
     line = row(plain, "Measure the sizes")
     assert "measure 0/40" in line and "~2h00" in line and "1 under way" in plain  # 90 + 30 min
+
+
+def test_next_release_an_item_whose_job_waits_for_its_turn_is_under_way(tmp_path):
+    """its job's file made at launch, behind a design stage not begun: the job waits for its turn (○),
+    and the item has begun all the same, with a finish time: the design's hour, the job's 2 h, the
+    build's 30 min (read from the marks, a waiting job's ○ left it planned, with none)"""
+    p = Project(tmp_path)
+    prog = tmp_path / "progress.jsonl"
+    midway(p)
+    made(prog, NOW - 30 * MIN)
+    plan = release_plan()
+    plan["next"] = {"release": "1.5.0", "items": [
+        {"key": "sizes", "name": "Measure the sizes", "group": "first", "build": 30,
+         "before": [["design", "design:sizes", 60], ["measure", {"progress": str(prog), "total": 40}, 120]]}]}
+    p.plan(plan)
+    plain = testing.render_text(next_panel(p.engine().build_frame(120), 120), 120)[0]
+    line = row(plain, "Measure the sizes")
+    assert "○─○─○" in line and "queued" in line and "~3h30" in line and "1 under way" in plain

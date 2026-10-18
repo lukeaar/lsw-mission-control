@@ -333,14 +333,23 @@ Fixed before the first release:
   days too many on a long run. The full run now adds only what its finish lies past the sample's
   (8 h), and a job whose finish falls within a stage before it adds nothing; a job with nothing begun
   before it counts from now, as before.
-- A detached job waiting for its turn reads no overrun. A pipeline that makes every job's progress
-  file at launch started every job's clock then: the full run after a sample read its time since
-  launch against its own plan (`full 0/353 +1d…`, `≥1d04h`) while the sample before it still ran,
-  and a job read late the moment its turn came (a 0-minute one at once). Now a job with no unit done
-  waits for its turn while a stage before it is unfinished: no time so far, no overrun, its whole
-  plan still to come. Its turn starts when the last stage before it finished, if that is after its
-  file was made, and its time so far, its overrun and its units' pace count from then; a unit
-  finished before then shows it ran beside them, so it is timed from its file, as before.
+- A detached job waiting for its turn reads no overrun, and leaves the stage column to the stages
+  before it. A pipeline that makes every job's progress file at launch started every job's clock
+  then: the full run after a sample read its time since launch against its own plan (`full 0/353
+  +1d…`, `≥1d04h`) while the sample before it still ran, and a job read late the moment its turn
+  came (a 0-minute one at once). Now a job made at launch (its file no later than a minute after
+  the latest start of the stages before it, or before one of them that has not begun) with no unit
+  done waits for its turn while a stage before it is unfinished: queued (`○`), no time so far, no
+  overrun, its whole plan still to come after the stages before it, and the stage column theirs
+  (`prep +2h00`, `prep failed`, `sample 0/80 +2…`, where it took them for itself: `full 0/353
+  +2h…`). Its turn starts when the last stage before it finished, and its time so far, its overrun
+  and its units' pace count from then. A unit finished before then shows it ran beside them, and a
+  job made after the stages before it began was launched beside them: both are timed from their
+  files, as before (a job launched 5 h ago beside a stage begun 6 h ago reads its 4 h overrun). A
+  job in a row that waits on a plugin's live job (`after_server`) waits for that job the same way:
+  it read the live job's stage with a false overrun (`import +9h00`, `≥3h00`), and now reads
+  `import` and the live job's time left, then its own plan (`~3h30`). A next or later release's item
+  whose only begun stage is a job waiting for its turn is under way.
 - A row that waits on one whose name begins with "After" no longer reads `after after`: the stage
   names what it waits on by the name's first word, which there was "after" itself. It now reads what
   follows that word, as much as the stage column holds (`After the lean merge: the extras` reads

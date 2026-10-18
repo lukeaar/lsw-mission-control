@@ -201,11 +201,18 @@ A detached job:
   the filesystem keeps one (macOS), else its last modification, or its earliest line (failed units
   included) if that is earlier. A unit written later never moves that start forward while the
   dashboard runs, even where the filesystem keeps no birth time;
-- **waits for its turn** when its file was made before it (a pipeline that makes every job's file
-  at launch): with no unit done, while a stage before it in its row is unfinished, it has run for no
-  time, reads no overrun, and has its whole plan still to come. Its turn starts when the last of the
-  stages before it finished, if that is after its file was made, and it is timed from then; a unit
-  finished before then shows it ran beside them, and it is timed from its file;
+- **waits for its turn** when its file was made at launch, ahead of its turn: no later than a minute
+  after the latest start of the stages before it in its row (a stage done by hand: its time), or
+  before one of them that has not begun (a pipeline that makes every job's file at launch makes them
+  one after another). With no unit done, while a stage before it is unfinished, it is queued (`○`)
+  and leaves the stage column to the stages before it: it has run for no time, reads no overrun, and
+  has its whole plan still to come, after theirs (after the row's wait too, when one of them has not
+  begun). Its turn starts when the last of the stages before it finished, and it is timed from then.
+  A unit finished before then shows it ran beside them, and it is timed from its file, as a job made
+  after the stages before it began is: it was launched beside them, and its overrun counts from its
+  file. In a row that waits on a plugin's live job (`after_server`) a job waits for that job in the
+  same way, whenever its file was made: the live job's start is not known, nor its end, so once it
+  is done a job after it is timed from its file;
 - takes its time left from, in order: `eta_json`'s projection while fresh; before any unit has
   finished, its planned minutes, as an agent's stage does; after that, the units' pace since the job
   began (`time so far × units left ÷ units done`) weighed against the plan as if the plan had done
