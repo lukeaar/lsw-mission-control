@@ -84,14 +84,14 @@ item is common), so the plan can carry its own explanations.
   Once that time has passed the hold is over, whatever `paused` says beside it: the row reads its
   real stage, or, while nothing of it has run since (no agent of it active since that time, even one
   that then died, or still at work, no job of it running, no stage of it done by hand since), `hold
-  ended` with `not resumed` where its
-  finish would be (the header counts `N not resumed`). It keeps the time left it had while held, as
-  if it resumed now, and its agents are back in Agents at work. A row with no stage stopped
-  part-way that waits on other work, or on your go-ahead, reads that wait instead (a stage stopped
-  part-way reads `hold ended` whatever the row waits on). Only work from that time on counts: an
-  item resumed early whose stage then finished before the hold's end reads `hold ended` until its
-  next stage starts (the plan keeps no start for a hold, so that cannot be told from a stage
-  finished before it). Take the hold out of the plan when you resume an item early.
+  ended` with `not resumed` where its finish would be (the header counts `N not resumed`). It keeps
+  the time left it had while held, as if it resumed now, and its agents are back in Agents at work.
+  A row with no stage stopped part-way that waits on other work, or on your go-ahead, reads that
+  wait instead (a stage stopped part-way reads `hold ended` whatever the row waits on). Only work
+  from that time on counts: an item resumed early whose stage then finished before the hold's end
+  reads `hold ended` until its next stage starts (the plan keeps no start for a hold, so that cannot
+  be told from a stage finished before it). Take the hold out of the plan when you resume an item
+  early.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 
@@ -120,11 +120,11 @@ an item of the same release, else of the nearest release before it that has one 
 so an item can wait on this release's work or another planned release's. A key no release holds is
 ignored.
 `build`/`review`/`fix` become stages only when their minutes are above 0; `by_hand` marks them done
-by hand, as a release item's (a stage it names that has no minutes is not there to mark). A planned item can be held
-as a release item can (`paused`, `paused_until`): it reads "paused" ("from <when>" for a hold with
-an end), is not under way, the header counts it (`N paused`), and its agents leave Agents at work
-(but for a label a later item shares with a nearer release's item or with other work: Agents at
-work names that one, and its agent stays).
+by hand, as a release item's (a stage it names that has no minutes is not there to mark). A planned
+item can be held as a release item can (`paused`, `paused_until`): it reads "paused" ("from <when>"
+for a hold with an end), is not under way, the header counts it (`N paused`), and its agents leave
+Agents at work (but for a label a later item shares with a nearer release's item or with other work:
+Agents at work names that one, and its agent stays).
 Begun, it keeps its time left, the hold's end counted as a wait beside the one on the work it runs
 after, so what runs after it waits for both; not begun, it has no finish time, as any planned item.
 Once its `paused_until` has passed with nothing of it run since, it reads `hold ended` · `not
@@ -211,9 +211,9 @@ A detached job:
   began (`time so far × units left ÷ units done`) weighed against the plan as if the plan had done
   a tenth of the units (at least one). The pace takes over as units come in, and one unit of a long job
   does not multiply its time left. The projection is a finish time, so it counts from the projected
-  end of the row's stages before it (from now when they are done): two jobs that follow each other,
-  a sample and the full run after it, say, can each point `eta_key` at their own finish, and the
-  first one's time is not counted twice.
+  end of the stages before it in its row that have begun (from now when none of them is
+  unfinished): two jobs that follow each other, a sample and the full run after it, say, can each
+  point `eta_key` at their own finish, and the first one's time is not counted twice.
 
 A job that is run again should delete its old progress file rather than empty it: emptying a file
 keeps its creation time where the filesystem keeps one, so the new run would read as begun with the
