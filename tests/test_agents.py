@@ -579,6 +579,28 @@ def test_a_sessions_own_agent_outside_the_window_is_not_read(tmp_path):
     assert [k for k in ag._ts_cache if k.startswith(str(p.projects))]
 
 
+def test_a_sessions_own_agents_are_read_from_its_own_project_only(tmp_path):
+    """A meta file whose transcript is not written yet is left for the next refresh; a workflow agent's
+    meta file (in its run's folder, as Claude Code writes one beside each workflow transcript) is no
+    session's agent; and another project's folder is never read, one whose name begins with this
+    project's included (a worktree's or a subfolder's sessions)"""
+    from lsw_mission_control.agents import scan_session_agents
+
+    p = Project(tmp_path)
+    d = p.projects / "sess-1" / "subagents"
+    d.mkdir(parents=True)
+    (d / "agent-anew.meta.json").write_text(json.dumps({"agentType": "Explore", "description": "Just launched"}))
+    p.agent("build:x", start_ago=10 * MIN, quiet_s=5, agent_id="awf")
+    p.finish_runs()
+    run = p.projects / "sess-1" / "subagents" / "workflows" / "wf_run-a"
+    (run / "agent-awf.meta.json").write_text(json.dumps({"agentType": "general-purpose", "description": "Build x"}))
+    other = Project(tmp_path / "other")
+    other.projects = tmp_path / f"{p.projects.name}-backend"
+    other.session_agent("Another project's errand", start_ago=5 * MIN, quiet_s=5)
+    assert scan_session_agents(p.projects, NOW) == []
+    assert [a["label"] for a in scan_session_agents(other.projects, NOW)] == ["Another project's errand"]
+
+
 def agents_text(p: Project, width: int = 120) -> str:
     from lsw_mission_control.render.agents import agents_panel
 

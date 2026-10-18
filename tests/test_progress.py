@@ -488,6 +488,56 @@ def test_back_to_back_jobs_each_count_from_the_projected_end_of_the_stages_befor
     assert sp(prep[1:], {}).remaining == 5 * HOUR
 
 
+def test_a_chain_of_projected_jobs_ends_at_the_latest_finish(tmp_path, monkeypatch):
+    """Three begun jobs in a row, each with its own finish (2 h, 1 h, 7 h): the row ends at the latest,
+    7 h, the one finishing within the job before it adding nothing; each counted from now, they read
+    10 h. A first job whose eta has gone stale counts its own estimate instead, and the job after it
+    still ends the row at its own finish when that is the later."""
+    monkeypatch.setattr(progress, "created_at", lambda st: NOW - 3 * HOUR)
+    files = [tmp_path / f"job{i}.jsonl" for i in range(3)]
+    for f in files:
+        f.write_text("")
+    eta = tmp_path / "eta.json"
+    finishes(eta, first=NOW + 2 * HOUR, second=NOW + HOUR, third=NOW + 7 * HOUR)
+    stages = [job(f, total=10, minutes=60.0, eta_json=str(eta), eta_key=k) for f, k in zip(files, ("first", "second", "third"))]
+    p = sp(stages, {})
+    assert [m[0] for m in p.marks] == ["◉", "◉", "◉"] and p.remaining == 7 * HOUR and p.over == 0
+    # the first job's eta 2 h old (stale): 40 of its 80 units in 3 h give it 3 h 23 left (its pace
+    # weighed against its plan), and the second's finish, 10 h from now, is still the row's
+    units(files[0], [NOW - 60] * 40, NOW - 60)
+    stale = tmp_path / "stale.json"
+    stale.write_text(json.dumps({"first": at(NOW + 2 * HOUR)}))
+    os.utime(stale, (NOW - 2 * HOUR, NOW - 2 * HOUR))
+    finishes(eta, second=NOW + 10 * HOUR)
+    two = [job(files[0], total=80, minutes=500.0, eta_json=str(stale), eta_key="first"),
+           job(files[1], total=10, minutes=2670.0, eta_json=str(eta), eta_key="second")]
+    p = sp(two, {})
+    assert p.remaining == pytest.approx(10 * HOUR) and p.current == "rebuild 0/10"
+
+
+def test_a_jobs_turn_starts_when_the_stage_before_it_was_done_by_hand(tmp_path):
+    """its file made at launch, 10 h ago; the outline before it done by hand 2 h ago: the job has run
+    2 h of its own, 1 h 30 past its 30 min plan, and a quarter of those 2 h is left"""
+    prog = tmp_path / "p.jsonl"
+    made(prog, NOW - 10 * HOUR)
+    p = sp([("outline", {"done": NOW - 2 * HOUR}, 15.0), job(prog, total=10, minutes=30.0)], {})
+    assert [m[0] for m in p.marks] == ["●", "◉"] and p.over == 90 * MIN and p.remaining == 30 * MIN
+
+
+def test_a_stage_done_by_hand_passes_an_earlier_rerun_on_to_the_agent_stages_after_it():
+    """between two agent stages: the first ran again an hour ago, after the third (2 h ago), so the
+    third runs again, as it would with no stage between them; a hand-done stage holds no start of its
+    own, but it does not stop an earlier one's from reaching the stages after it"""
+    stages = [("draft", "draft:x", 30.0), ("sign-off", {"done": NOW - 3 * HOUR}, 0.0), ("publish", "publish:x", 30.0)]
+    labels = {"draft:x": a("draft:x", "done", NOW - HOUR, NOW - 50 * MIN),
+              "publish:x": a("publish:x", "done", NOW - 2 * HOUR, NOW - 1.5 * HOUR)}
+    p = sp(stages, labels)
+    assert p.marks[2][0] == "○" and p.current == "queued" and p.remaining == 30 * MIN
+    # the third run after the first's re-run: done
+    labels["publish:x"] = a("publish:x", "done", NOW - 40 * MIN, NOW - 20 * MIN)
+    assert sp(stages, labels).marks[2][0] == "●"
+
+
 def test_the_first_units_pace_is_weighed_against_the_plan(tmp_path, monkeypatch):
     """A long job's first unit (the largest first, several run at once) lands hours after launch:
     one unit is not yet a pace, so it must not multiply the job's time left."""
