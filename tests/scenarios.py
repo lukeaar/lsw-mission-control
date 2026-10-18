@@ -101,6 +101,40 @@ class Project:
             {"type": "tool_use", "name": name, "input": {"description": what}}]}})
         (d / f"agent-{aid}.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines))
 
+    def session_agent(self, description: str, *, agent_type: str = "general-purpose", start_ago: float = 30 * MIN,
+                      quiet_s: float = 30.0, action: str = "Bash · Run the unit tests", returned: bool = False,
+                      writes_log: str | None = None, agent_id: str | None = None, session: str = "sess-1",
+                      meta: object = True) -> Path:
+        """An agent a session launched itself, outside any workflow, as Claude Code writes one:
+        `<session>/subagents/agent-<id>.jsonl` and `agent-<id>.meta.json` beside it (`meta`: False writes
+        none, a dict or text is written as it is). Its transcript's last record is its latest tool call's
+        result, or, `returned`, the model ending its turn. Returns the transcript's path."""
+        d = self.projects / session / "subagents"
+        d.mkdir(parents=True, exist_ok=True)
+        aid = agent_id or "a" + hashlib.md5(f"{session}/{description}/{len(list(d.glob('*.jsonl')))}".encode()).hexdigest()[:16]
+        if meta is not False:
+            rec = {"agentType": agent_type, "description": description, "toolUseId": "toolu_x", "spawnDepth": 1,
+                   "requestShape": "background", "requestNonInteractive": True} if meta is True else meta
+            (d / f"agent-{aid}.meta.json").write_text(rec if isinstance(rec, str) else json.dumps(rec))
+        t0, t1 = NOW - start_ago, NOW - quiet_s
+        name, _, what = action.partition(" · ")
+        lines = [{"timestamp": ts(t0), "type": "user", "message": {"role": "user", "content": "go"}}]
+        if writes_log:
+            lines.append({"timestamp": ts(t0 + 1), "type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": f"pytest -q > {writes_log}.log 2>&1"}}]}})
+        lines.append({"timestamp": ts(t1 - 1), "type": "assistant", "message": {"role": "assistant", "stop_reason": None,
+                      "content": [{"type": "tool_use", "name": name, "input": {"description": what}}]}})
+        if returned:
+            lines.append({"timestamp": ts(t1), "type": "assistant", "message": {
+                "role": "assistant", "stop_reason": "end_turn", "content": [{"type": "text", "text": "Done."}]}})
+        else:
+            lines.append({"timestamp": ts(t1), "type": "user", "message": {
+                "role": "user", "content": [{"type": "tool_result", "content": "ok"}]}})
+        path = d / f"agent-{aid}.jsonl"
+        path.write_text("".join(json.dumps(x) + "\n" for x in lines))
+        os.utime(path, (t1, t1))
+        return path
+
     def run_end(self, run: str, status: str = "killed", ago_s: float = 10 * MIN, session: str = "sess-1",
                 record: object = None) -> None:
         """The Workflow runtime's record of a run's end (`<session>/workflows/<run>.json`): `status`
@@ -233,6 +267,9 @@ def midway(p: Project, job: str = "running") -> None:
     # other work
     p.agent("docs:draft", start_ago=40 * MIN, quiet_s=2 * MIN, run="wf_run-b", action="Write · docs/guide/export.md")
     p.agent("deps:plan", start_ago=5 * HOUR, quiet_s=4 * HOUR, run="wf_run-c")  # paused: its idle agent is not a failure
+    # an agent the session launched itself, outside any workflow: named by its description
+    p.session_agent("Find why the export test flakes", agent_type="Explore", start_ago=25 * MIN, quiet_s=70,
+                    action="Grep · retry_on_timeout")
     p.log("export-tests", "....\n412 passed, 3 skipped in 81.2s\n", 3 * MIN)
     p.log("startup-bench", "collecting\n[ 42%] bench_cold_start\n", 1 * MIN)
     p.log("a11y-suite", "E   AssertionError\n2 failed, 88 passed in 12.1s\n", 50 * MIN)

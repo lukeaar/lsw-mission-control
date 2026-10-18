@@ -54,6 +54,10 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
     live = {id(a) for a in running}
     newest = latest_attempts([a for a in agents if a["status"] == "done" or id(a) in live])
     running = [a for a in running if newest[(a["run"], a["label"])] is a]
+    # The agents sessions launched themselves, outside any workflow: each one its own (no attempt
+    # replaces another, and no plan row holds one), at work until its transcript ends its turn or it
+    # falls silent, as a workflow's does.
+    running += [a for a in f.session_agents if a["status"] == "running" and a["t1"] and t_now - a["t1"] < silent_s]
     running.sort(key=lambda a: -(a["t1"] or 0))
     shown, hidden = running, []
     if len(running) > max_rows:
@@ -64,7 +68,9 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
         hidden = [a for a in running if a not in shown]
     names = f.names
     t = Table(box=None, show_header=True, header_style=f"bold {C.FAINT}", pad_edge=False, expand=True)
-    t.add_column("agent", no_wrap=True, style=C.ACCENT_SOFT)
+    # At most a third of the width, cut with "…": a session's agent is named by its description, and a
+    # long name (a long label too) took the whole row, leaving its times and doing now no room.
+    t.add_column("agent", no_wrap=True, style=C.ACCENT_SOFT, max_width=max(16, width // 3), overflow="ellipsis")
     t.add_column("for", no_wrap=True, style=C.MUTED, max_width=36, overflow="ellipsis")
     t.add_column("running", no_wrap=True, style=C.MUTED, justify="right")
     t.add_column("active", no_wrap=True, justify="right")
@@ -88,7 +94,7 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
         whos = []
         for stem, _label, mtime in logs:
             # the agent whose command writes this log, and was at work when it was last written
-            owners = [a for a in agents if stem in (a.get("logs") or ())
+            owners = [a for a in [*agents, *f.session_agents] if stem in (a.get("logs") or ())
                       and (a["t0"] or 0) - 60 <= mtime <= (a["t1"] or t_now) + 600]
             owners.sort(key=lambda a: (a["status"] == "running", a["t1"] or 0), reverse=True)
             who = ""

@@ -164,7 +164,9 @@ and later), until everything a row runs after is done:
 
 `spec` is one of:
 
-- an agent label (`"docs:draft"`), run-qualified if needed (`"wf_<run>/docs:draft"`);
+- an agent label (`"docs:draft"`), run-qualified if needed (`"wf_<run>/docs:draft"`): a workflow
+  agent's (an agent a session launches itself, outside a workflow, shows in Agents at work by its
+  description, but no stage reads it: its result is not kept);
 - a list of labels (all must finish);
 - `null`: no agent — it counts as done once a later stage has started (an agent of it is known, or
   its job's progress file exists);

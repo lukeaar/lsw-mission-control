@@ -114,9 +114,10 @@ freezes the clock.
   on a plugin's live job.
 - **The side row**: each plugin's card, then **Repository** (HEAD, unpushed commits, branches,
   worktrees, pull requests, the last CI run and release).
-- **Agents at work**: running workflow agents, how long they have run, how long since they last
-  did anything (green, amber, red), and their latest tool call; then the recent test suites in
-  the session scratchpads, each named after the agent whose command writes its log.
+- **Agents at work**: running workflow agents, and the agents a session launched itself (named by
+  their description), how long they have run, how long since they last did anything (green,
+  amber, red), and their latest tool call; then the recent test suites in the session
+  scratchpads, each named after the agent whose command writes its log.
 - **Model usage**: the 5-hour and weekly plan limits with their resets, tokens used (last 5 h,
   today, 7 days) and by model; beside it the logo, turning slowly — a frozen dashboard stops.
 - **The last row**: the Key, and at the very right whether this computer is on the internet and

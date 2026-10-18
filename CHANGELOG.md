@@ -64,6 +64,16 @@ is not a time is refused like any other typo (the plan's title note says `{progr
 {done}` where it said `or {progress, total}`), and a stage done by hand since a hold ended is the
 work resumed. It has no start, so it never makes the stages after it run again.
 
+Agents at work lists the agents a session launches itself, outside any workflow, beside the
+workflows' agents, within the same scan window. Claude Code keeps their transcripts beside the
+session's workflow runs (`<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json`); each
+reads by its description, with its agent type (`Explore`, `general-purpose`) under `for`, and is at
+work until its transcript's last record ends the model's turn, or it falls silent past `[agents]
+silent_stopped_min`. A test log its command writes is named after it. No row reads one: a stage reads
+workflow agents, whose results their journals keep. The agent column is at most a third of the
+panel, cut with `…`: a long name (a description, or a long label) took the whole row, leaving its
+times and what it is doing no room (at 80 columns, none at all).
+
 Fixed before the first release:
 
 - The logo shows in a window under 100 columns wide, and never cuts Model usage short. It was drawn

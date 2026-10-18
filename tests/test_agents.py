@@ -83,10 +83,43 @@ def test_the_transcript_cache_keeps_one_entry_per_transcript(tmp_path):
 
 
 def test_transcript_facts_of_a_missing_or_odd_file(tmp_path):
-    assert transcript_facts(tmp_path / "nope.jsonl") == (None, None, "", frozenset())
+    assert transcript_facts(tmp_path / "nope.jsonl") == (None, None, "", frozenset(), False)
     f = tmp_path / "odd.jsonl"
     f.write_text("not json\n{also not\n")
-    assert transcript_facts(f) == (None, None, "", frozenset())
+    assert transcript_facts(f) == (None, None, "", frozenset(), False)
+    # valid JSON that is not a record, last or among them, and a message that is not an object: skipped,
+    # never a failed frame (they raised)
+    f.write_text(json.dumps({"timestamp": ts(NOW - 60), "type": "user", "message": "go"}) + "\n3\n\"x\"\n[1]\n")
+    assert transcript_facts(f) == (NOW - 60, NOW - 60, "", frozenset(), False)
+
+
+def record(t: float, kind: str, stop_reason=None, content=("text",)) -> str:
+    """One transcript record, as Claude Code writes it (only what the facts read)."""
+    msg = {"role": kind, "content": [{"type": c, "name": "Bash", "input": {"description": "x"}} if c == "tool_use"
+                                     else {"type": c} for c in content]}
+    if kind == "assistant":
+        msg["stop_reason"] = stop_reason
+    return json.dumps({"timestamp": ts(t), "type": kind, "message": msg}) + "\n"
+
+
+@pytest.mark.parametrize("last, ended", [
+    (record(NOW, "assistant", "end_turn"), True),  # the model ended its turn: returned
+    (record(NOW, "assistant", "end_turn", ("thinking", "text")), True),
+    (record(NOW, "user", content=("tool_result",)), False),  # a tool's result: the model answers next
+    (record(NOW, "assistant", None, ("tool_use",)), False),  # a tool call it waits on
+    (record(NOW, "assistant", "tool_use", ("tool_use",)), False),
+    (record(NOW, "assistant", None, ("text",)), False),  # a block of a message still coming in
+    (record(NOW, "assistant", "max_tokens"), False),  # no measured end: the silence rule tells
+    (json.dumps({"timestamp": ts(NOW), "type": "attachment"}) + "\n", False),
+    (json.dumps({"timestamp": ts(NOW), "type": "assistant", "message": "end_turn"}) + "\n", False),
+])
+def test_a_transcript_whose_last_record_ends_the_models_turn_has_returned(tmp_path, last, ended):
+    f = tmp_path / "agent-x.jsonl"
+    f.write_text(record(NOW - 60, "user") + record(NOW - 30, "assistant", "end_turn") + last)
+    assert transcript_facts(f)[4] is ended
+    # a line that is not a record after it, or half a line still being written, leaves it the last
+    f.write_text(f.read_text() + "3\n{\"timestamp\": \"2026")
+    assert transcript_facts(f)[4] is ended
 
 
 def journal_dir(p: Project, run: str = "wf_lines"):
@@ -495,3 +528,129 @@ def test_a_record_in_another_session_never_stops_a_run(tmp_path):
     p.run_end("wf_run-a", "killed", ago_s=10 * MIN, session="sess-A")
     p.finish_runs()
     assert [a["status"] for a in scan_agents(p.projects, NOW)] == ["running"]
+
+
+# ── agents a session launched itself, outside any workflow ──────────────────────────────────────────
+def test_a_sessions_own_agents_are_scanned_from_their_transcripts_and_meta_files(tmp_path):
+    """Claude Code keeps them beside the session's workflow runs: `<session>/subagents/agent-<id>.jsonl`
+    and its `.meta.json`. The description is the label, the agent type the phase, the session the run;
+    running until the transcript's last record ends the model's turn."""
+    from lsw_mission_control.agents import scan_session_agents
+
+    p = Project(tmp_path)
+    p.session_agent("Diagnose the  flaky\nexport test", agent_type="Explore", start_ago=20 * MIN, quiet_s=40,
+                    action="Grep · def export", writes_log="flaky-export", agent_id="a1")
+    p.session_agent("Check the docs links", returned=True, agent_id="a2", session="sess-2")
+    p.session_agent("A forked conversation", meta=False, agent_id="a3")  # no meta file: not launched as an agent
+    p.session_agent("Meta still being written", meta='{"agentType": "Expl', agent_id="a4")
+    p.session_agent("Meta not an object", meta=[1, 2], agent_id="a5")
+    p.session_agent("", meta={"agentType": None}, agent_id="a6")  # nothing to name it by
+    p.agent("build:x", start_ago=10 * MIN, quiet_s=5)  # a workflow's agent: scan_agents gives it, not this
+    p.finish_runs()
+    got = {a["id"]: a for a in scan_session_agents(p.projects, NOW)}
+    assert set(got) == {"a1", "a2", "a6"}
+    a1 = got["a1"]
+    assert a1["label"] == "Diagnose the flaky export test" and a1["phase"] == "Explore" and a1["status"] == "running"
+    assert a1["run"] == "sess-1" and a1["session"] is True and a1["result"] is None and a1["seq"] is None
+    assert a1["t0"] == pytest.approx(NOW - 20 * MIN) and a1["t1"] == pytest.approx(NOW - 40)
+    assert a1["action"] == "Grep · def export" and a1["logs"] == frozenset({"flaky-export"})
+    assert got["a2"]["status"] == "done" and got["a2"]["run"] == "sess-2"
+    assert got["a6"]["label"] == "?" and got["a6"]["phase"] == ""
+    # an id a workflow's journal gives is listed once, as that workflow's
+    assert {a["id"] for a in scan_session_agents(p.projects, NOW, skip={"a1"})} == {"a2", "a6"}
+
+
+def test_a_sessions_own_agent_outside_the_window_is_not_read(tmp_path):
+    from lsw_mission_control import agents as ag
+    from lsw_mission_control.agents import scan_session_agents
+
+    p = Project(tmp_path)
+    path = p.session_agent("Old errand", start_ago=50 * HOUR, quiet_s=49 * HOUR)
+    assert scan_session_agents(p.projects, NOW) == []
+    (a,) = scan_session_agents(p.projects, NOW, window_s=50 * HOUR)
+    assert a["label"] == "Old errand" and [k for k in ag._session_cache if k.startswith(str(p.projects))] == [str(path)]
+    # its cache entry goes when it leaves the window, and the workflows' scan never drops it (nor it theirs)
+    p.agent("build:x", start_ago=10 * MIN, quiet_s=5)
+    p.finish_runs()
+    scan_agents(p.projects, NOW)
+    assert str(path) in ag._session_cache and [k for k in ag._ts_cache if k.startswith(str(p.projects))]
+    assert scan_session_agents(p.projects, NOW) == []
+    assert not [k for k in ag._session_cache if k.startswith(str(p.projects))]
+    assert [k for k in ag._ts_cache if k.startswith(str(p.projects))]
+
+
+def agents_text(p: Project, width: int = 120) -> str:
+    from lsw_mission_control.render.agents import agents_panel
+
+    return testing.render_text(agents_panel(p.engine().build_frame(width), width, []), width)[0]
+
+
+def test_agents_at_work_lists_a_sessions_own_agents_beside_the_workflows(tmp_path):
+    """midway's three workflow agents and its session's agent at work, and two more of a session's own
+    (two of one description are two agents); one that returned, and one silent past silent_stopped_min
+    (cut off), are not at work"""
+    p = Project(tmp_path)
+    midway(p)
+    p.session_agent("Diagnose the flaky export test", agent_type="Explore", start_ago=12 * MIN, quiet_s=5,
+                    action="Grep · def export")
+    p.session_agent("Diagnose the flaky export test", start_ago=3 * MIN, quiet_s=50, session="sess-2")
+    p.session_agent("Check the docs links", returned=True, quiet_s=20)
+    p.session_agent("Survey the old benchmarks", start_ago=2 * HOUR, quiet_s=26 * MIN)
+    text = agents_text(p)
+    rows = [line for line in text.splitlines() if "Diagnose the flaky export test" in line]
+    assert len(rows) == 2 and "Explore" in rows[0] and "12m" in rows[0] and "Grep · def export" in rows[0]
+    assert "general-purpose" in rows[1] and "50s ago" in rows[1]
+    assert "Check the docs links" not in text and "Survey the old benchmarks" not in text
+    assert "fix:export" in text and "Find why the export test flakes" in text and "6 running" in text
+
+
+def test_a_long_name_never_takes_the_row(tmp_path):
+    """the agent column is at most a third of the width, cut with "…": a long description took the whole
+    row at 80 columns, leaving its times and what it is doing no room"""
+    p = Project(tmp_path)
+    midway(p)
+    p.session_agent("Audit duplication and abstraction across the render modules and the engine",
+                    agent_type="Explore", start_ago=12 * MIN, quiet_s=5, action="Grep · def work_row")
+    row = next(line for line in agents_text(p, 80).splitlines() if "Audit" in line)
+    assert "Audit duplication and abs…" in row and "12m" in row and "5s ago" in row and "Grep" in row
+
+
+def test_no_row_reads_a_sessions_own_agent(tmp_path):
+    """a session's agent described as a plan label is not that stage's agent: no row reads it (its result
+    is not kept, so a review of it would read as finding nothing) and the finished store never keeps it"""
+    p = Project(tmp_path)
+    midway(p)
+    p.session_agent("build:a11y", start_ago=10 * MIN, quiet_s=5)
+    p.session_agent("review:startup", returned=True)
+    e = p.engine()
+    f = e.build_frame(120)
+    assert f.labels["build:a11y"]["status"] == "failed" and "review:startup" not in f.labels
+    assert {a["label"] for a in f.session_agents} == {"build:a11y", "review:startup", "Find why the export test flakes"}
+    assert not [a for a in f.agents if a.get("session")]
+    kept = json.loads((p.cache / "finished.json").read_text())["agents"]
+    assert not [r for r in kept.values() if r["run"] == "sess-1"]
+    # Agents at work still lists it while it runs, for the item its description names
+    row = next(line for line in agents_text(p).splitlines() if line.startswith("│ build:a11y"))
+    assert "Accessibility audit" in row and "5s ago" in row
+
+
+def test_a_workflow_agent_is_never_listed_twice(tmp_path):
+    """a session's transcript under a workflow agent's id (a conversation forked from it, given a meta
+    file) is that workflow agent's: it is listed once, as the workflow's"""
+    p = Project(tmp_path)
+    midway(p)
+    p.session_agent("Continue the fix", start_ago=5 * MIN, quiet_s=3, agent_id="a" + "f" * 16)
+    p.agent("fix:dark", start_ago=10 * MIN, quiet_s=4, agent_id="a" + "f" * 16)
+    text = agents_text(p)
+    assert "fix:dark" in text and "Continue the fix" not in text and "5 running" in text
+
+
+def test_a_test_log_a_sessions_agent_writes_is_named_after_it(tmp_path):
+    from lsw_mission_control.render.agents import agents_panel
+
+    p = Project(tmp_path)
+    midway(p)
+    p.session_agent("Diagnose the flaky export test", start_ago=12 * MIN, quiet_s=5, writes_log="flaky-export")
+    f = p.engine().build_frame(120)
+    text = testing.render_text(agents_panel(f, 120, [("flaky-export", "3 failed, 9 passed", NOW - 2 * MIN)]), 120)[0]
+    assert "Diagnose the flaky export test  3 failed, 9 passed" in text

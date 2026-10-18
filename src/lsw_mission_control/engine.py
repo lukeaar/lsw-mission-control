@@ -18,7 +18,14 @@ from rich.text import Text
 
 import lsw_mission_control
 from lsw_mission_control import theme
-from lsw_mission_control.agents import FinishedStore, final_merge_labels, label_names, latest_by_label, scan_agents
+from lsw_mission_control.agents import (
+    FinishedStore,
+    final_merge_labels,
+    label_names,
+    latest_by_label,
+    scan_agents,
+    scan_session_agents,
+)
 from lsw_mission_control.config import Config
 from lsw_mission_control.connectivity import UNKNOWN, Conn, connection
 from lsw_mission_control.net import OWN_LABELS, NetRules, NetState, network_critical
@@ -75,6 +82,9 @@ class Frame:
     # rows can wait on (render/release.py release_rows), and the planned releases' rows, worked out
     # together (render/next_release.py planned_rows).
     memo: dict = field(default_factory=dict)
+    # The agents sessions launched themselves, outside any workflow (agents.scan_session_agents()):
+    # Agents at work lists them beside `agents`, and no row reads them.
+    session_agents: list[dict] = field(default_factory=list)
 
 
 def _overrides(plugin: Plugin, method: str) -> bool:
@@ -224,14 +234,17 @@ class Engine:
         plan = self.plans.refresh()
         t = now()
         names = label_names(plan, cfg.release.final_merge)
+        window = cfg.agents.scan_window_h * 3600
+        scanned = scan_agents(cfg.projects_dir, t, window)
         # The final merge is one release's own: the shipped release's never reads as the next one's.
-        agents = self.finished.merge(scan_agents(cfg.projects_dir, t, cfg.agents.scan_window_h * 3600), plan, names,
+        agents = self.finished.merge(scanned, plan, names,
                                      loaded=self.plans.loaded, release_bound=final_merge_labels(cfg.release.final_merge))
         labels = latest_by_label(agents, t, cfg.agents.silent_stopped_min * 60)
         calibrate(self.cal, plan.items, labels)
         f = Frame(now=t, width=width, cfg=cfg, plan=plan, plan_note=self.plans.note, reload_note=self.reload_note,
                   notes=self.notes.refresh(), agents=agents, labels=labels, names=names, cal=self.cal,
-                  store=self.store.snapshot(), flags=self.flags, notes_note=self.notes.note)
+                  store=self.store.snapshot(), flags=self.flags, notes_note=self.notes.note,
+                  session_agents=scan_session_agents(cfg.projects_dir, t, window, skip={a["id"] for a in scanned}))
         src = self._live_job_plugin()
         if src is not None:
             job, err = self._plugin_call(f, src, "live_job", f, check=check_live_job)

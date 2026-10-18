@@ -1,4 +1,5 @@
-"""Workflow agents, from the journals and transcripts Claude Code writes under ~/.claude/projects.
+"""Workflow agents, from the journals and transcripts Claude Code writes under ~/.claude/projects, and
+the agents a session launches itself, outside any workflow (scan_session_agents()).
 
 An agent is a dict (the finished store saves them as JSON): id, label, phase, status
 (running | done | failed), result, run (the wf_* folder), seq (where it started in its run's
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 # transcript path -> ((size, mtime), its facts): one entry per transcript, not one per change of it
 # (a dashboard runs for days), and scan_agents drops the transcripts it no longer sees.
 _ts_cache: dict = {}
+# the same for the transcripts of the agents sessions launched themselves (scan_session_agents drops them)
+_session_cache: dict = {}
 # a run's end record -> ((size, mtime), when it ended or None), dropped as _ts_cache's entries are
 _end_cache: dict = {}
 # A run's record says it has ended (the Workflow runtime writes it when a run completes, is stopped,
@@ -36,22 +39,37 @@ END_SLACK_S = 60.0
 # A log belongs to the agent whose shell command WRITES it (> x.log, >> x.log, | tee x.log).
 _LOG_WRITE = re.compile(r"(?:>>?|\btee\s+(?:-a\s+)?)\s*[^\s;|&<>]*?([\w.-]+)\.log\b")
 TAIL_BYTES = 200_000
+# A transcript whose last record is the model ending its turn (an assistant message whose stop_reason is
+# one of these) has returned. Measured on Claude Code's transcripts of agents sessions launched: every
+# finished one ends so, and one cut off ends on a tool call or its result. Any other end (an API error,
+# an older Claude Code that kept no stop reason) reads running until the silence rule says it stopped.
+TURN_ENDED = ("end_turn",)
 
 
-def transcript_facts(path: Path) -> tuple[float | None, float | None, str, frozenset]:
-    """First and last timestamps of an agent transcript, its latest tool call, and the
-    scratchpad logs its recent tool calls mention (so a test log can be named after its agent)."""
+def _ends_turn(rec: dict | None) -> bool:
+    """A transcript's last record is the model ending its turn (TURN_ENDED)."""
+    msg = rec.get("message") if rec is not None and rec.get("type") == "assistant" else None
+    return isinstance(msg, dict) and msg.get("stop_reason") in TURN_ENDED
+
+
+def transcript_facts(path: Path, cache: dict | None = None) -> tuple[float | None, float | None, str, frozenset, bool]:
+    """First and last timestamps of an agent transcript, its latest tool call, the scratchpad logs its
+    recent tool calls mention (so a test log can be named after its agent), and whether its last record
+    is the model ending its turn (_ends_turn(): a session's own agent has returned then). `cache`: where
+    its facts are kept (_ts_cache by default)."""
+    cache = _ts_cache if cache is None else cache
     try:
         st = path.stat()
     except OSError:
-        return None, None, "", frozenset()
+        return None, None, "", frozenset(), False
     key = (st.st_size, st.st_mtime)
-    hit = _ts_cache.get(str(path))
+    hit = cache.get(str(path))
     if hit is not None and hit[0] == key:
         return hit[1]
     t0 = t1 = None
     action = ""
     logs: set = set()
+    last = None  # its last record
     try:
         with open(path, "rb") as f:
             first = f.readline()
@@ -77,9 +95,14 @@ def transcript_facts(path: Path) -> tuple[float | None, float | None, str, froze
                 rec = json.loads(raw)
             except Exception:
                 continue
+            if not isinstance(rec, dict):
+                continue  # valid JSON but not a record ("x", 3, []): nothing to read
+            if last is None:
+                last = rec
             if t1 is None and rec.get("timestamp"):
                 t1 = iso(rec["timestamp"])
-            content = (rec.get("message") or {}).get("content")
+            msg = rec.get("message")
+            content = msg.get("content") if isinstance(msg, dict) else None
             if not action and isinstance(content, list):
                 for item in reversed(content):
                     if isinstance(item, dict) and item.get("type") == "tool_use":
@@ -91,8 +114,8 @@ def transcript_facts(path: Path) -> tuple[float | None, float | None, str, froze
                 break
     except OSError:
         pass
-    facts = (t0, t1, action, frozenset(logs))
-    _ts_cache[str(path)] = (key, facts)
+    facts = (t0, t1, action, frozenset(logs), _ends_turn(last))
+    cache[str(path)] = (key, facts)
     return facts
 
 
@@ -195,7 +218,7 @@ def scan_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600) -> 
         for a in attempts.values():
             transcript = run_dir / f"agent-{a['id']}.jsonl"
             read.add(str(transcript))
-            t0, t1, action, logs = transcript_facts(transcript)
+            t0, t1, action, logs, _ended = transcript_facts(transcript)
             a.update(t0=t0, t1=t1, action=action, logs=logs)
             if stopped_with_run(a, end):
                 a["status"] = "failed"  # stopped with its run: no silence to wait out
@@ -204,6 +227,47 @@ def scan_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600) -> 
         del _ts_cache[gone]  # out of the window (or deleted): its facts are not needed again
     for gone in [k for k in _end_cache if k not in ends and k.startswith(str(projects_dir))]:
         del _end_cache[gone]
+    return agents
+
+
+def scan_session_agents(projects_dir: Path, now: float, window_s: float = 48 * 3600,
+                        skip: Collection[str] = ()) -> list[dict]:
+    """Every agent a session launched itself, outside any workflow, of the scan window (its transcript
+    written to within it). Claude Code keeps its transcript beside the session's workflow runs,
+    `<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json` beside it ({"agentType",
+    "description", ...}). Each is an agent as scan_agents() gives one, marked `session`: labelled by its
+    description, its phase its agent type, its run the session; done once its transcript's last record
+    is the model ending its turn, else running (the silence rule then tells one cut off, as for a
+    workflow's). It has no attempts and no result, and no plan row reads it (a stage reads workflow
+    agents, whose results their journals keep): Agents at work lists it, and names a test log it
+    writes after it. `skip`: agent ids a workflow's journal gives (an agent is listed once). A
+    transcript with no meta file beside it was not launched as an agent (a forked conversation)."""
+    agents = []
+    cutoff = now - window_s
+    read: set = set()
+    for meta_path in projects_dir.glob("*/subagents/agent-*.meta.json"):
+        base = meta_path.name[: -len(".meta.json")]
+        aid = base[len("agent-"):]
+        transcript = meta_path.with_name(f"{base}.jsonl")
+        if aid in skip:
+            continue
+        try:
+            if transcript.stat().st_mtime < cutoff:
+                continue
+            meta = json.loads(meta_path.read_text())
+        except (OSError, ValueError):
+            continue  # no transcript yet, or a meta file still being written: the next refresh reads it
+        if not isinstance(meta, dict):
+            continue
+        read.add(str(transcript))
+        t0, t1, action, logs, ended = transcript_facts(transcript, _session_cache)
+        # one line: the description is outside text, drawn in a row of its own
+        label = " ".join(str(meta.get("description") or "").split()) or "?"
+        agents.append({"id": aid, "label": label, "phase": " ".join(str(meta.get("agentType") or "").split()),
+                       "status": "done" if ended else "running", "result": None, "run": meta_path.parent.parent.name,
+                       "seq": None, "t0": t0, "t1": t1, "action": action, "logs": logs, "session": True})
+    for gone in [k for k in _session_cache if k not in read and k.startswith(str(projects_dir))]:
+        del _session_cache[gone]  # out of the window (or deleted)
     return agents
 
 

@@ -24,9 +24,9 @@ lsw-mission-control/
     plan.py               parse_stage, done_by_hand, parse_plan, Held, Item/OtherItem/NextItem/NextRelease/Plan,
                           PlanLoader
     notes.py              Notes, read_notes, NotesLoader
-    agents.py             transcript_facts, run_ended, stopped_with_run, scan_agents, final_merge_labels, label_names,
-                          findings_of, stored_ok, store_since, FinishedStore, journal_seq, later_attempt,
-                          latest_attempts, latest_by_label, died_after, review_needs_fix
+    agents.py             transcript_facts, run_ended, stopped_with_run, scan_agents, scan_session_agents,
+                          final_merge_labels, label_names, findings_of, stored_ok, store_since, FinishedStore,
+                          journal_seq, later_attempt, latest_attempts, latest_by_label, died_after, review_needs_fix
     progress.py           Prog, Calibration, calibrate, JobFile, created_at, job_file, progress_of, stage_begun,
                           eta_from_json, stages_progress, stages_started, wait_for, in_wait_order, item_stages,
                           item_progress, hold_left, owner_stage, item_active_since, stages_active_since,
@@ -105,7 +105,8 @@ wait_for([(ref, Prog)], rerun) -> (seconds | None, ref) | None   # what a row st
                                                       # nothing; a failed target has no time unless rerun
 in_wait_order(n, targets_of, compute, rerun) -> [Prog]   # each row after its targets (release, other, next)
 Frame(now, width, cfg, plan, plan_note, reload_note, notes, agents, labels, names, cal, store, flags,
-      live_job, live_job_error, plugin_errors, notes_note, memo)   # memo: what its panels work out once and share
+      live_job, live_job_error, plugin_errors, notes_note, memo,   # memo: what its panels work out once and share
+      session_agents)                                 # the agents sessions launched themselves: Agents at work only
 Engine(cfg, flags, *, readonly, plugins, load_errors, no_plugins)
   .start_sources(probe) .ready() .build_frame(width) .frame(console) .safe_frame(console) .render(console)
   .errors_for_once() .watched_files() .network_critical() .connection() .safe_connection(); .ps_text (injectable),
@@ -114,7 +115,8 @@ Engine.frame / safe_frame -> (body, NetState(crit, conn), width)
 ```
 
 `Engine.frame` runs in this order: refresh the plan, fix the width (`min(console width,
-max_width)`), scan the transcripts and merge the finished store, `latest_by_label`, `calibrate`,
+max_width)`), scan the transcripts and merge the finished store, `latest_by_label`, `calibrate`, scan
+the agents sessions launched themselves (`scan_session_agents`, skipping any id a journal gives),
 build the release, next-release and later-release panels (`later[i]`, each in its own containment
 and drawn right after the next release's), then the title and the panels in `[layout] panels`
 order, then `network_critical()`. A panel that fails to build or to draw is replaced by an error
@@ -348,7 +350,11 @@ Panels:
   live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
   head and `also in motion`.
 - The side row: plugin cards, then Repository.
-- Agents at work and the recent test suites.
+- Agents at work and the recent test suites: workflow agents, and beside them the agents a session
+  launched itself (`<session>/subagents/agent-<id>.jsonl` with its `.meta.json`: its description, its
+  agent type under `for`; running until its transcript's last record ends the model's turn, or silent
+  past `silent_stopped_min`; no row reads one, and the finished store never keeps one); the agent
+  column at most a third of the width, cut with `…`.
 - Model usage: meters, stale data as a faint meter with a muted % and the subtitle in amber (no note
   on the rows, which would widen Model usage and push the logo out of a 99-column window),
   resets (and a passed reset), status (`warning: close to a limit`, `limit reached`, others),

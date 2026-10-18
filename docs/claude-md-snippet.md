@@ -27,11 +27,13 @@ HAND, in the same turn as the change:
   per release, in order), never as a group inside `next`; when a release ships, `next` becomes
   `items` and the first of `later` becomes `next`.
 - **Name workflow agents `build:<key>` / `review:<key>` / `fix:<key>`**, matching an item's key,
-  or the dashboard cannot track them. The release's final merge uses the key `<final-merge key>`;
-  move the plan's `release` on once a release ships, before the next final merge starts (only a
-  final merge begun after the dashboard sees the change counts for the new release). A stopped
-  workflow's `other` entry gets `"paused": true` until it is resumed; a release item, or a next or
-  later one, held until a time gets `"paused_until"`, and its hold ends by itself at that time.
+  or the dashboard cannot track them (an agent a session launches itself, outside a workflow, shows
+  in Agents at work by its description, but no row tracks it). The release's final merge uses the
+  key `<final-merge key>`; move the plan's `release` on once a release ships, before the next final
+  merge starts (only a final merge begun after the dashboard sees the change counts for the new
+  release). A stopped workflow's `other` entry gets `"paused": true` until it is resumed; a release
+  item, or a next or later one, held until a time gets `"paused_until"`, and its hold ends by itself
+  at that time.
 - **The network indicator (bottom right) must always be right.** Before starting any
   network-dependent operation of a kind it does not recognise, add that kind FIRST: to the engine's
   `src/lsw_mission_control/net.py` (`NET_TOOLS` / `NET_SUBCOMMANDS`, plus a real ps line in
