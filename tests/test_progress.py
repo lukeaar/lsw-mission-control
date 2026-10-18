@@ -394,6 +394,53 @@ def test_an_empty_progress_file_runs_from_its_creation(tmp_path):
     assert p.current == "rebuild 0/1200" and p.remaining == HOUR and p.over == 0
 
 
+@pytest.mark.parametrize("minutes", [0.0, 30.0])
+def test_a_job_waiting_for_its_turn_reads_no_overrun(tmp_path, minutes):
+    """its file made 10 h ago, at launch, while the stage before it still runs (20 min of its hour):
+    no unit, no time so far, no overrun, and its whole plan still to come. Timed from its file it
+    read 10 h past its plan (a 0-minute one too), with 2 h 30 left (a quarter of its 10 h)."""
+    prog = tmp_path / "p.jsonl"
+    made(prog, NOW - 10 * HOUR)
+    stages = [("prep", "prep:x", 60.0), job(prog, minutes=minutes)]
+    p = sp(stages, {"prep:x": a("prep:x", "running", NOW - 20 * MIN, NOW)})
+    assert [m[0] for m in p.marks] == ["◉", "◉"] and p.over == 0 and p.remaining == (40 + minutes) * MIN
+    assert p.fraction == pytest.approx(20 / (20 + 40 + minutes))
+    # failed, or held, before it: still not its turn
+    failed = {"prep:x": a("prep:x", "failed", NOW - 3 * HOUR, NOW - 2 * HOUR)}
+    assert sp(stages, failed).over == 0 and sp(stages, failed, paused=True).over == 0
+
+
+def test_a_jobs_turn_starts_when_the_stages_before_it_finished(tmp_path):
+    """prep finished an hour ago: the job (its file 10 h old) has run an hour of its own, half an
+    hour past its 30 min plan; a quarter of that hour is left"""
+    prog = tmp_path / "p.jsonl"
+    made(prog, NOW - 10 * HOUR)
+    prep = {"prep:x": a("prep:x", "done", NOW - 2 * HOUR, NOW - HOUR)}
+    p = sp([("prep", "prep:x", 60.0), job(prog, minutes=30.0)], prep)
+    assert p.over == 30 * MIN and p.remaining == 15 * MIN
+    # a job begun after the stages before it finished is timed from its file, as always
+    made(prog, NOW - 20 * MIN)
+    p = sp([("prep", "prep:x", 60.0), job(prog, minutes=30.0)], prep)
+    assert p.over == 0 and p.remaining == 10 * MIN
+
+
+def test_a_unit_done_before_its_turn_shows_the_job_ran_beside_the_stages_before_it(tmp_path, monkeypatch):
+    """its pace is timed from its own start: its turn when its first unit came after it, its file when
+    the unit came before (it ran beside them), and its file while a stage before it still runs"""
+    monkeypatch.setattr(progress, "created_at", lambda st: NOW - 10 * HOUR)
+    prog = tmp_path / "p.jsonl"
+    stages = [("prep", "prep:x", 60.0), job(prog, total=4, minutes=600.0)]
+    prog.write_text(json.dumps({"t": NOW - HOUR}) + "\n")  # after prep's end: its turn (5 h ago)
+    prep = {"prep:x": a("prep:x", "done", NOW - 6 * HOUR, NOW - 5 * HOUR)}
+    # 5 h for 1 unit: 15 h for the 3 left, against the plan's 5 h left weighed as one unit
+    assert sp(stages, prep).remaining == pytest.approx((5 * HOUR + 15 * HOUR) / 2)
+    prog.write_text(json.dumps({"t": NOW - 6 * HOUR}) + "\n" + json.dumps({"t": NOW - HOUR}) + "\n")
+    # 10 h for 2 units: 10 h for the 2 left; past its 10 h plan, a quarter of its 10 h
+    assert sp(stages, prep).remaining == pytest.approx((2.5 * HOUR + 2 * 10 * HOUR) / 3)
+    running = {"prep:x": a("prep:x", "running", NOW - 6 * HOUR, NOW)}  # 6 h into its hour: 1 h 30 left
+    assert sp(stages, running).remaining == pytest.approx(1.5 * HOUR + (2.5 * HOUR + 2 * 10 * HOUR) / 3)
+
+
 def test_a_file_made_after_now_has_run_for_no_time(tmp_path):
     prog = tmp_path / "p.jsonl"
     made(prog, NOW + 60)  # a clock that disagrees: never a negative time so far

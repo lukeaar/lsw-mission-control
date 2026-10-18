@@ -315,6 +315,14 @@ Fixed before the first release:
   days too many on a long run. The full run now adds only what its finish lies past the sample's
   (8 h), and a job whose finish falls within a stage before it adds nothing; a job with nothing begun
   before it counts from now, as before.
+- A detached job waiting for its turn reads no overrun. A pipeline that makes every job's progress
+  file at launch started every job's clock then: the full run after a sample read its time since
+  launch against its own plan (`full 0/353 +1d…`, `≥1d04h`) while the sample before it still ran,
+  and a job read late the moment its turn came (a 0-minute one at once). Now a job with no unit done
+  waits for its turn while a stage before it is unfinished: no time so far, no overrun, its whole
+  plan still to come. Its turn starts when the last stage before it finished, if that is after its
+  file was made, and its time so far, its overrun and its units' pace count from then; a unit
+  finished before then shows it ran beside them, so it is timed from its file, as before.
 
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
 `[[plugins]]` name; `validate_options` names the type it expected; `render.widgets.fit_stages`,

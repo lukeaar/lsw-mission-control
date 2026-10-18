@@ -300,13 +300,23 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                     ends.append(job.last)
                 progressed += (job.last - start) if job.last is not None and job.last > start else minutes * 60
                 continue
-            # Running from the moment its file exists, even with no unit finished yet.
-            elapsed = max(0.0, now - start)
+            # Running from the moment its file exists, even with no unit finished yet, and timed from its
+            # own start. Its file can be made before its turn (a pipeline that makes every job's file at
+            # launch): with no unit done it waits for its turn while a stage before it is unfinished, with
+            # no time so far (so no overrun) and its whole plan still to come. Its turn starts when the
+            # last of the stages before it finished, if that is after its file was made; a unit finished
+            # before then shows it ran beside them, so it is timed from its file.
+            turn = max([start, *ends]) if all(m[0] in ("●", "–") for m in marks) else None
+            if turn is not None and (job.first is None or job.first >= turn):
+                own = turn
+            else:
+                own = start if n else None  # None: waiting for its turn
+            elapsed = 0.0 if own is None else max(0.0, now - own)
             projected = eta_from_json(spec.get("eta_json"), spec.get("eta_key", "projected_finish_utc"), now)
             # Its planned minutes, as an agent's stage has: past them, at least 10 min, or a quarter
             # of its time so far.
             planned_left = minutes * 60 - elapsed
-            if planned_left < 10 * 60:
+            if own is not None and planned_left < 10 * 60:
                 planned_left = max(10 * 60, 0.25 * elapsed)
             if projected:
                 # The job's own projection (e.g. a cost model over pages) beats a unit count when
@@ -325,7 +335,8 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                 left = (k * planned_left + n * pace) / (k + n)
             else:
                 left = planned_left  # no unit has finished to give a pace
-                over = max(over, elapsed - max(minutes, planned) * 60)
+                if own is not None:  # an overrun counts only from its own start
+                    over = max(over, elapsed - max(minutes, planned) * 60)
             remaining += left
             progressed += elapsed
             current = f"{name} {n}/{total}"

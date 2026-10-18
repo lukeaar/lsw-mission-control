@@ -31,13 +31,14 @@ def made(path, t) -> None:
     os.utime(path, (t, t))
 
 
-def thumbnails(p: Project, prog) -> None:
+def thumbnails(p: Project, prog, launched_ago: float = 3 * HOUR) -> None:
+    """The launch stage ran from `launched_ago` for half an hour."""
     midway(p)
     plan = release_plan()
     plan["other"] = [{"name": NAME, "stages": [
         ["launch", "run:thumbs", 90], ["rebuild", {"progress": str(prog), "total": 1200}, 3900], ["check", "check:thumbs", 60]]}]
     p.plan(plan)
-    p.agent("run:thumbs", status="done", start_ago=3 * HOUR, quiet_s=2.5 * HOUR, run="wf_run-s")
+    p.agent("run:thumbs", status="done", start_ago=launched_ago, quiet_s=launched_ago - 0.5 * HOUR, run="wf_run-s")
 
 
 def other_text(p: Project) -> str:
@@ -74,12 +75,48 @@ def test_other_a_job_runs_from_its_empty_progress_file(tmp_path, monkeypatch):
 
 
 def test_other_a_job_past_its_plan_with_no_unit_shows_the_overrun(tmp_path):
-    p = Project(tmp_path)
+    """launched 71 h ago, its file made 70 h ago: 70 h of its own against its 65 h plan"""
     prog = tmp_path / "progress.jsonl"
     made(prog, NOW - 70 * HOUR)
-    thumbnails(p, prog)
+    (tmp_path / "a").mkdir()
+    p = Project(tmp_path / "a")
+    thumbnails(p, prog, launched_ago=71 * HOUR)
     line = row(other_text(p), NAME)
     assert "rebuild 0/1200" in line and "≥" in line  # the stage column cuts the "+5h00"
+    # launched 3 h ago, after its file was made: its own start is when the launch finished, 2.5 h ago
+    # (timed from its file, it read 5 h past its plan the moment its turn came)
+    (tmp_path / "b").mkdir()
+    p = Project(tmp_path / "b")
+    thumbnails(p, prog)
+    line = row(other_text(p), NAME)
+    assert "rebuild 0/1200" in line and "≥" not in line and "~2d15h" in line  # 3,900 min - 2.5 h, + 1 h
+
+
+def test_a_job_whose_file_was_made_at_launch_waits_for_its_turn(tmp_path, monkeypatch):
+    """A pipeline that makes every job's progress file at launch: the full run's file is 70 h old while
+    the sample before it still runs. The full run has not started: no overrun (it read `≥` with the
+    stage `full 0/353 +1d…`, 70 h since its file against its 44.5 h plan), and its whole plan is still
+    to come. Once the sample has finished its turn has come, and it is timed from the sample's end."""
+    monkeypatch.setattr(progress, "created_at", lambda st: NOW - 70 * HOUR)
+    p = Project(tmp_path)
+    midway(p)
+    sample, full, eta = tmp_path / "sample.jsonl", tmp_path / "full.jsonl", tmp_path / "eta.json"
+    sample.write_text("".join(json.dumps({"t": NOW - 60 * HOUR + i * 60}) + "\n" for i in range(40)))
+    full.write_text("")
+    eta.write_text(json.dumps({"sample_end": "2026-09-22T00:13:20Z"}))  # 10 h from now
+    os.utime(eta, (NOW - 60, NOW - 60))
+    plan = release_plan()
+    plan["other"] = [{"name": NAME, "stages": [
+        ["sample", {"progress": str(sample), "total": 80, "eta_json": str(eta), "eta_key": "sample_end"}, 600],
+        ["full", {"progress": str(full), "total": 353}, 2670], ["check", "check:thumbs", 60]]}]
+    p.plan(plan)
+    line = row(other_text(p), NAME)
+    # the sample's 10 h, then the full run's whole 44.5 h, then the check's hour
+    assert "◉─◉─○" in line and "full 0/353" in line and "+" not in line and "≥" not in line and "~2d07h" in line
+    # the sample's last unit 2 h ago: the full run's turn came then (42.5 h left), and the check's hour
+    sample.write_text("".join(json.dumps({"t": NOW - 2 * HOUR}) + "\n" for _ in range(80)))
+    line = row(other_text(p), NAME)
+    assert "●─◉─○" in line and "full 0/353" in line and "+" not in line and "~1d19h" in line
 
 
 def test_next_release_an_item_whose_job_has_begun_is_under_way(tmp_path):

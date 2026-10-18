@@ -191,6 +191,11 @@ A detached job:
   the filesystem keeps one (macOS), else its last modification, or its earliest line (failed units
   included) if that is earlier. A unit written later never moves that start forward while the
   dashboard runs, even where the filesystem keeps no birth time;
+- **waits for its turn** when its file was made before it (a pipeline that makes every job's file
+  at launch): with no unit done, while a stage before it in its row is unfinished, it has run for no
+  time, reads no overrun, and has its whole plan still to come. Its turn starts when the last of the
+  stages before it finished, if that is after its file was made, and it is timed from then; a unit
+  finished before then shows it ran beside them, and it is timed from its file;
 - takes its time left from, in order: `eta_json`'s projection while fresh; before any unit has
   finished, its planned minutes, as an agent's stage does; after that, the units' pace since the job
   began (`time so far × units left ÷ units done`) weighed against the plan as if the plan had done
@@ -210,7 +215,8 @@ first line appears (a moment, normally).
 
 A stage that re-ran after a later one started makes the later ones count again (a job counts from
 when it began). A running stage past its estimate has at least 10 min left, or a quarter of its time
-so far.
+so far. An overrun counts only from a stage's own start: a stage not begun, or a job waiting for its
+turn, never reads one, whatever its planned minutes (0 included).
 
 A label can have several attempts in one run: the Workflow runtime starts an agent again after an
 API error, and a resumed run starts its unfinished agents again. The stage reads the label's
