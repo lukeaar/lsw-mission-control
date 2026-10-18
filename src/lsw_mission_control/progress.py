@@ -285,12 +285,19 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
             # Done by hand at the time the plan gives: no agent and no progress file. Its planned time
             # is behind the row. It has no start, so it never makes the stages after it run again;
             # and a review done by hand records no findings, so whether a fix is needed is not known.
+            if name == "review":
+                prev_review = None
+            if done_at < prev_start:
+                # Done before an earlier stage's latest start: that stage ran again after it, so it must
+                # be done again, as a result older than that re-run must: not done, its time queued.
+                queued += minutes * 60
+                marks.append(("○", C.FAINT))
+                unbegun = True
+                continue
             marks.append(("●", C.GREEN))
             ends.append(done_at)
             launched = max(launched, done_at)
             progressed += minutes * 60
-            if name == "review":
-                prev_review = None
             continue
         if isinstance(spec, dict):
             total = int(spec["total"])
@@ -529,9 +536,10 @@ def hold_left(item, at: float) -> float:
 
 def owner_stage(stages: Sequence, p: Prog) -> int | None:
     """The stage a row waits on the owner for, by its index: the first of its stages not yet behind it
-    (done, or a fix not needed), when that is the owner's (named "your …", with no agent) and nothing
-    of the row runs. None otherwise: a stage that runs, or one that failed before it, comes first.
-    The release, the next release and the later ones read it alike."""
+    (done, or a fix not needed), when that is the owner's (named "your …", with no agent, or done by
+    hand before an earlier stage ran again: stages_progress()) and nothing of the row runs. None
+    otherwise: a stage that runs, or one that failed before it, comes first. The release, the next
+    release and the later ones read it alike."""
     marks = p.marks
     if len(marks) != len(stages) or any(m[0] == "◉" for m in marks):
         return None
@@ -539,7 +547,7 @@ def owner_stage(stages: Sequence, p: Prog) -> int | None:
     if i is None or marks[i][0] != "○":
         return None
     name, spec, _m = stages[i]
-    return i if spec is None and str(name).lower().startswith("your") else None
+    return i if (spec is None or done_by_hand(spec) is not None) and str(name).lower().startswith("your") else None
 
 
 def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> bool:

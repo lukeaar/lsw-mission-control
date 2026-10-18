@@ -68,10 +68,11 @@ item is common), so the plan can carry its own explanations.
   `owner_ok` (shows "your go-ahead" until it starts). See "Waits" below.
 - A fix whose review found nothing of severity blocker/major/minor is skipped (`–`); until the
   review is done its time is weighted by the fix share.
-- A stage named `your …` with no agent (`null`) is the owner's. While it is the item's next stage
-  (everything before it done), nothing of the item runs and it waits on nothing else, the row reads
-  that stage and waits on you, as in `next`: the header counts it (`N wait on you`), with each
-  `owner_ok` item's "your go-ahead". It keeps its planned time, so the release's finish counts it.
+- A stage named `your …` with no agent (`null`, or done by hand before a stage before it ran again:
+  see `{"done"}` below) is the owner's. While it is the item's next stage (everything before it
+  done), nothing of the item runs and it waits on nothing else, the row reads that stage and waits
+  on you, as in `next`: the header counts it (`N wait on you`), with each `owner_ok` item's "your
+  go-ahead". It keeps its planned time, so the release's finish counts it.
 - `paused: true`: held by the owner (its workflow was stopped). It reads "paused" (its bar filled
   with the work done in muted grey), with no finish of its own, never "failed" or "queued"; the
   header counts it as paused, its agents leave Agents at work, and it keeps its time left, so the
@@ -111,9 +112,10 @@ Planned, not scheduled: no finish time until work on an item starts. Items are g
 `group` (in order); the finished ones are counted (`N done`) and drawn as one row below the rest,
 `● N finished`, as the release's are (after a blank row where group headings are drawn), so a
 group whose items have all finished has no heading.
-A stage named `your …` with a null spec is the owner's ("wait on you"): an item whose first stage
-not yet behind it is the owner's, with nothing of it running and nothing else to wait for, reads it
-and has no finish time, begun or not (a stage that failed before it reads the failure).
+A stage named `your …` with a null spec (or one done by hand before a stage before it ran again) is
+the owner's ("wait on you"): an item whose first stage not yet behind it is the owner's, with
+nothing of it running and nothing else to wait for, reads it and has no finish time, begun or not
+(a stage that failed before it reads the failure).
 `after:<key>` shows `after <name>` while that item is unfinished (see "Waits" below). The key names
 an item of the same release, else of the nearest release before it that has one (this release's
 `items` last), else of the nearest after it: every planned release's waits are worked out together,
@@ -189,7 +191,10 @@ and later), until everything a row runs after is done:
   marked in its `by_hand`. Any other key beside `done` is ignored, so a job's spec can be
   marked done where it stands; a `done` that is not a time is refused like any other typo. The stage
   has no start, so it never makes the stages after it run again, and a stage named `review` done by
-  hand records no findings: a `fix` after it is weighted by the fix share until it runs.
+  hand records no findings: a `fix` after it is weighted by the fix share until it runs. Done before
+  the latest start of the stages before it (one of them ran again after it), it reads not done (`○`,
+  its planned time still to come), as an agent's result older than that re-run does, until it is
+  marked done again with a later time; a `your …` stage made so waits on you again.
 
 A detached job:
 

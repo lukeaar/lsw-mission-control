@@ -20,6 +20,7 @@ from lsw_mission_control.progress import (
     item_minutes,
     item_started,
     job_file,
+    owner_stage,
     progress_of,
     short_name,
     stages_active_since,
@@ -596,6 +597,37 @@ def test_a_jobs_turn_starts_when_the_stage_before_it_was_done_by_hand(tmp_path):
     assert [m[0] for m in p.marks] == ["●", "◉"] and p.over == 90 * MIN and p.remaining == 30 * MIN
 
 
+def test_a_stage_done_by_hand_before_an_earlier_stages_rerun_is_done_again():
+    """the draft ran again an hour ago, after the sign-off was done by hand (3 h ago): the sign-off reads
+    not done (○, its 15 min queued), as an agent's result older than that re-run does. It read done."""
+    stages = [("draft", "draft:x", 30.0), ("sign-off", {"done": NOW - 3 * HOUR}, 15.0), ("publish", "publish:x", 30.0)]
+    labels = {"draft:x": a("draft:x", "done", NOW - HOUR, NOW - 50 * MIN)}
+    p = sp(stages, labels)
+    assert [m[0] for m in p.marks] == ["●", "○", "○"] and p.current == "queued" and p.remaining == 45 * MIN
+    # signed off again since the re-run (or at its start): done
+    for when in (NOW - 40 * MIN, NOW - HOUR):
+        stages[1] = ("sign-off", {"done": when}, 15.0)
+        assert [m[0] for m in sp(stages, labels).marks] == ["●", "●", "○"]
+    # a review done by hand made stale so: the fix after it is still weighed by the fix share
+    stages = [STAGES[0], ("review", {"done": NOW - 3 * HOUR}, 20.0), STAGES[2]]
+    p = sp(stages, {"build:x": a("build:x", "done", NOW - 2 * HOUR, NOW - HOUR)})
+    assert [m[0] for m in p.marks] == ["●", "○", "○"] and p.remaining == (20 + 30 * 0.7) * MIN
+
+
+def test_a_your_stage_done_by_hand_before_a_rerun_waits_on_the_owner_again():
+    """`your sign-off` done by hand, then the draft before it ran again: the row waits on the owner for it
+    again, as it does for a `your …` stage with no agent (it skipped to the publish, `queued`)"""
+    stages = [("draft", "draft:x", 30.0), ("your sign-off", {"done": NOW - 3 * HOUR}, 0.0), ("publish", "publish:x", 30.0)]
+    labels = {"draft:x": a("draft:x", "done", NOW - HOUR, NOW - 50 * MIN)}
+    assert owner_stage(stages, sp(stages, labels)) == 1
+    assert owner_stage(stages, sp(stages, {})) is None  # done by hand, and nothing before it ran again
+    labels["draft:x"] = a("draft:x", "running", NOW - HOUR, NOW)
+    assert owner_stage(stages, sp(stages, labels)) is None  # the draft still runs
+    renamed = [stages[0], ("sign-off", stages[1][1], 0.0), stages[2]]
+    labels["draft:x"] = a("draft:x", "done", NOW - HOUR, NOW - 50 * MIN)
+    assert owner_stage(renamed, sp(renamed, labels)) is None  # not the owner's
+
+
 def test_a_stage_done_by_hand_passes_an_earlier_rerun_on_to_the_agent_stages_after_it():
     """between two agent stages: the first ran again an hour ago, after the third (2 h ago), so the
     third runs again, as it would with no stage between them; a hand-done stage holds no start of its
@@ -604,7 +636,7 @@ def test_a_stage_done_by_hand_passes_an_earlier_rerun_on_to_the_agent_stages_aft
     labels = {"draft:x": a("draft:x", "done", NOW - HOUR, NOW - 50 * MIN),
               "publish:x": a("publish:x", "done", NOW - 2 * HOUR, NOW - 1.5 * HOUR)}
     p = sp(stages, labels)
-    assert p.marks[2][0] == "○" and p.current == "queued" and p.remaining == 30 * MIN
+    assert [m[0] for m in p.marks] == ["●", "○", "○"] and p.current == "queued" and p.remaining == 30 * MIN
     # the third run after the first's re-run: done
     labels["publish:x"] = a("publish:x", "done", NOW - 40 * MIN, NOW - 20 * MIN)
     assert sp(stages, labels).marks[2][0] == "●"

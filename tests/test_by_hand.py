@@ -153,3 +153,40 @@ def test_a_planned_items_build_done_by_hand_starts_it(tmp_path):
     plain = text(next_panel, p)
     sync = row(plain, "Offline sync")
     assert "●─○" in sync and "queued" in sync and "~45m" in sync and "1 under way" in plain
+
+
+# ── a stage done by hand before an earlier stage ran again ──────────────────────────────────────────
+def test_a_your_stage_done_by_hand_waits_on_the_owner_again_after_an_earlier_stage_ran_again(tmp_path):
+    """export's design ran again an hour ago, after its sign-off was done by hand (3 h ago): the row
+    waits on the owner for the sign-off again, as it does for one with no agent (it read the build,
+    `queued`, and never asked)"""
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["items"][1]["key"] = "export2"  # a key no agent of midway's has worked on
+    plan["items"][1]["before"] = [["design", "design:export2", 30], ["your sign-off", {"done": ts(NOW - 3 * HOUR)}, 0]]
+    p.plan(plan)
+    p.agent("design:export2", status="done", start_ago=HOUR, quiet_s=50 * MIN)
+    plain = text(release_panel, p)
+    export = row(plain, "Export to CSV")
+    assert "●─○─○─○─○" in export and "your sign-off" in export and "2 wait on you" in plain
+    # signed off again since: the build is next
+    plan["items"][1]["before"][1][1] = {"done": ts(NOW - 30 * MIN)}
+    p.plan(plan)
+    plain = text(release_panel, p)
+    export = row(plain, "Export to CSV")
+    assert "●─●─○─○─○" in export and "queued" in export and "1 wait on you" in plain
+
+
+def test_a_planned_items_pick_done_by_hand_before_its_draft_ran_again_waits_on_the_owner(tmp_path):
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["next"] = {"release": "1.5.0", "items": [
+        {"key": "sync", "name": "Offline sync", "group": "first", "build": 240,
+         "before": [["draft", "draft:sync", 30], ["your pick", {"done": ts(NOW - 3 * HOUR)}, 0]]}]}
+    p.plan(plan)
+    p.agent("draft:sync", status="done", start_ago=HOUR, quiet_s=50 * MIN)
+    plain = text(next_panel, p)
+    sync = row(plain, "Offline sync")
+    assert "●─○─○" in sync and "your pick" in sync and "1 wait on you" in plain and sync.rstrip(" │").endswith("—")

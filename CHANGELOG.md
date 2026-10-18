@@ -62,11 +62,14 @@ done only by taking a whole release item's key away (`key: null`) or the row out
 other key beside `done` is ignored (a job's spec can be marked done where it stands), a `done` that
 is not a time is refused like any other typo (the plan's title note says `{progress, total} or
 {done}` where it said `or {progress, total}`), and a stage done by hand since a hold ended is the
-work resumed. It has no start, so it never makes the stages after it run again. The build, review and
-fix an item's key gives it have no spec to mark: a release item, or a next or later one, lists the
-ones done by hand in `by_hand` (`{"build": "<ISO time>"}`), and each reads as a stage done by hand,
-so a release item whose work was all done by hand reads done with its key kept (a key other than
-build, review or fix, or a value that is not a time, is refused as a typo).
+work resumed. It has no start, so it never makes the stages after it run again; but done before the
+latest start of the stages before it (one of them ran again after it), it reads not done (`○`, its
+planned time still to come), as an agent's result older than that re-run does, and a `your …` stage
+made so waits on you again, until it is marked done with a later time. The build, review and fix
+an item's key gives it have no spec to mark: a release item, or a next or later one, lists the ones
+done by hand in `by_hand` (`{"build": "<ISO time>"}`), and each reads as a stage done by hand, so a
+release item whose work was all done by hand reads done with its key kept (a key other than build,
+review or fix, or a value that is not a time, is refused as a typo).
 
 Agents at work lists the agents a session launches itself, outside any workflow, beside the
 workflows' agents, within the same scan window. Claude Code keeps their transcripts beside the
