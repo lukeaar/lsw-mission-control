@@ -8,6 +8,8 @@ import pytest
 from lsw_mission_control.notes import NotesLoader, read_notes
 from lsw_mission_control.plan import EMPTY_PLAN, PlanLoader, parse_plan, parse_stage
 
+from conftest import NOW
+
 
 @pytest.mark.parametrize("stage, want", [
     (["build", "build:x", 30], ("build", "build:x", 30.0)),
@@ -16,6 +18,12 @@ from lsw_mission_control.plan import EMPTY_PLAN, PlanLoader, parse_plan, parse_s
     (["job", {"progress": "/p.jsonl", "total": 12}, 60], ("job", {"progress": "/p.jsonl", "total": 12}, 60.0)),
     (["job", {"progress": "/p.jsonl", "total": 3, "eta_json": "/e.json"}, 1],
      ("job", {"progress": "/p.jsonl", "total": 3, "eta_json": "/e.json"}, 1.0)),
+    # done by hand: its ISO time kept as epoch seconds (NOW); any key beside it is ignored, so a job's
+    # spec (a wrong one included) can be marked done where it stands
+    (["by hand", {"done": "2026-09-21T14:13:20Z"}, 15], ("by hand", {"done": NOW}, 15.0)),
+    (["by hand", {"done": "2026-09-22T00:13:20+10:00", "note": "x"}, 0], ("by hand", {"done": NOW, "note": "x"}, 0.0)),
+    (["job", {"progress": "/p.jsonl", "total": 0, "done": "2026-09-21T14:13:20.000Z"}, 60],
+     ("job", {"progress": "/p.jsonl", "total": 0, "done": NOW}, 60.0)),
 ])
 def test_parse_stage_accepts(stage, want):
     assert parse_stage(stage, "Item") == want
@@ -28,7 +36,22 @@ def test_parse_stage_accepts(stage, want):
 def test_parse_stage_rejects_with_its_text(stage):
     with pytest.raises(ValueError) as e:
         parse_stage(stage, "Item")
-    assert str(e.value) == ("stage 'bad' of 'Item': label must be text, a list of text, null, or {progress, total}")
+    assert str(e.value) == ("stage 'bad' of 'Item': label must be text, a list of text, null, {progress, total} "
+                            "or {done}")
+
+
+@pytest.mark.parametrize("done", ["yesterday", "", "2026-13-01", 1_790_000_000, True, None, [], {}])
+def test_a_done_that_is_not_a_time_is_refused(done):
+    """a typo must never mark work done: the plan is not loaded, and the title says why"""
+    with pytest.raises(ValueError) as e:
+        parse_stage(["bad", {"done": done}, 10], "Item")
+    assert str(e.value).startswith("stage 'bad' of 'Item': done must be the ISO time it was done, not ")
+
+
+def test_a_stage_done_by_hand_has_its_minutes_checked():
+    with pytest.raises(ValueError) as e:
+        parse_stage(["bad", {"done": "2026-09-21T14:13:20Z"}, -1], "Item")
+    assert "must be from 0 to" in str(e.value)
 
 
 def test_parse_plan_shapes():

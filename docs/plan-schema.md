@@ -23,7 +23,8 @@ item is common), so the plan can carry its own explanations.
     {"name": "Security review", "key": "security", "build": 60, "review": 30, "fix": 30, "flags": ["after_all", "owner_ok"]}
   ],
   "other": [
-    {"name": "Docs site refresh", "stages": [["draft", "docs:draft", 60], ["review", "docs:review", 20]]},
+    {"name": "Docs site refresh", "stages": [["outline", {"done": "2026-09-20T17:30:00+10:00"}, 15],
+                                             ["draft", "docs:draft", 60], ["review", "docs:review", 20]]},
     {"name": "Dependency upgrades", "stages": [["upgrade", "deps:upgrade", 60]], "paused": true},
     {"name": "Benchmarks", "after": "Docs site refresh", "stages": [["bench", "bench:run", 40]]},
     {"name": "Nightly import", "after_server": true, "stages": [["import", null, 0], ["verify", "verify:import", 30]]}
@@ -78,7 +79,8 @@ item is common), so the plan can carry its own explanations.
   along a chain of `after:` waits count the hold once, not once per row.
   Once that time has passed the hold is over, whatever `paused` says beside it: the row reads its
   real stage, or, while nothing of it has run since (no agent of it active since that time, even one
-  that then died, or still at work, no job of it running), `hold ended` with `not resumed` where its
+  that then died, or still at work, no job of it running, no stage of it done by hand since), `hold
+  ended` with `not resumed` where its
   finish would be (the header counts `N not resumed`). It keeps the time left it had while held, as
   if it resumed now, and its agents are back in Agents at work. A row with no stage stopped
   part-way that waits on other work, or on your go-ahead, reads that wait instead (a stage stopped
@@ -170,7 +172,14 @@ and later), until everything a row runs after is done:
   for a detached job that appends one JSON line per finished unit (`{"t": <epoch>, "status"?: "ok"|"done"}`;
   a line with any other status is a failed unit, which is not counted, and a `t` that is not a time in
   2000-2100 in epoch seconds, such as a placeholder `0` or milliseconds, is no time). `eta_json` (used
-  while under 30 min old) is the job's own projected finish, as an ISO time.
+  while under 30 min old) is the job's own projected finish, as an ISO time;
+- `{"done": "<ISO time with offset>"}`: done by hand at that time. The stage reads done, with no
+  agent and no progress file, and its planned minutes count as work behind the row. Mark work done
+  by hand this way, stage by stage, instead of a `null` key (which marks a whole release item done)
+  or taking the row out of the plan. Any other key beside `done` is ignored, so a job's spec can be
+  marked done where it stands; a `done` that is not a time is refused like any other typo. The stage
+  has no start, so it never makes the stages after it run again, and a stage named `review` done by
+  hand records no findings: a `fix` after it is weighted by the fix share until it runs.
 
 A detached job:
 

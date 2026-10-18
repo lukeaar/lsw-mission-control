@@ -55,6 +55,15 @@ there is room, rather than guess. `--once` waits for the first answer (at most 2
 row's other states through the live view, and `[network] check_internet = false` turns the check
 off. With the internet answering, the flag draws exactly as before.
 
+A stage done by hand is marked done stage by stage: `{"done": "<ISO time>"}` as its spec. It reads
+done, with no agent and no progress file, and its planned minutes count as work behind the row. A
+`null` stage counts as done only once a later stage has begun, so work done by hand could be marked
+done only by taking a whole release item's key away (`key: null`) or the row out of the plan. Any
+other key beside `done` is ignored (a job's spec can be marked done where it stands), a `done` that
+is not a time is refused like any other typo (the plan's title note says `{progress, total} or
+{done}` where it said `or {progress, total}`), and a stage done by hand since a hold ended is the
+work resumed. It has no start, so it never makes the stages after it run again.
+
 Fixed before the first release:
 
 - The logo shows in a window under 100 columns wide, and never cuts Model usage short. It was drawn

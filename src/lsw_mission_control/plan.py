@@ -14,9 +14,16 @@ from lsw_mission_control.util import iso
 if TYPE_CHECKING:
     from lsw_mission_control.plugin import Plugin
 
-# (name, spec, minutes). spec: an agent label, a list of labels, None (no agent), or
-# {"progress": path, "total": n, "eta_json"?: path, "eta_key"?: str} for a detached job.
+# (name, spec, minutes). spec: an agent label, a list of labels, None (no agent),
+# {"progress": path, "total": n, "eta_json"?: path, "eta_key"?: str} for a detached job, or
+# {"done": epoch seconds} for a stage done by hand (the plan gives an ISO time: parse_stage).
 Stage = tuple
+
+
+def done_by_hand(spec) -> float | None:
+    """When a stage done by hand was done (epoch seconds): its spec is {"done": "<ISO time>"} in the
+    plan, which parse_stage reads. None for any other stage."""
+    return float(spec["done"]) if isinstance(spec, dict) and "done" in spec else None
 
 
 class Held:
@@ -138,18 +145,23 @@ def _number(value, what: str, whole: bool = False) -> float:
 
 def parse_stage(st: list, owner: str) -> Stage:
     """[name, spec, minutes]. spec: an agent label, a list of labels, null (no agent: it counts as
-    behind once a later stage has started), or {"progress": path, "total": n} for a detached job
-    that appends one JSON line per finished unit to `path` (it has begun once `path` exists)."""
+    behind once a later stage has started), {"progress": path, "total": n} for a detached job
+    that appends one JSON line per finished unit to `path` (it has begun once `path` exists), or
+    {"done": "<ISO time>"} for a stage done by hand then. Beside "done" any other key is ignored (a
+    job's spec can be marked done where it stands); its time is kept as epoch seconds."""
     if not isinstance(st, list) or len(st) != 3:
         raise ValueError(f"a stage of {owner!r} must be [name, label, minutes], not {st!r}"[:120])
     name, spec, minutes = st[0], st[1], st[2]
+    if isinstance(spec, dict) and "done" in spec:
+        return (str(name), {**spec, "done": _done_at(spec["done"], f"stage {name!r} of {owner!r}")},
+                _number(minutes, f"stage {name!r} of {owner!r}"))
     ok = (spec is None or isinstance(spec, str)
           or (isinstance(spec, list) and all(isinstance(x, str) for x in spec))
           or (isinstance(spec, dict) and isinstance(spec.get("progress"), str) and int(spec.get("total", 0)) > 0
               and (spec.get("eta_json") is None or isinstance(spec.get("eta_json"), str))))
     if not ok:
         raise ValueError(f"stage {name!r} of {owner!r}: label must be text, a list of text, null, "
-                         "or {progress, total}")
+                         "{progress, total} or {done}")
     if isinstance(spec, dict):
         if int(spec["total"]) > MAX_UNITS:
             raise ValueError(f"stage {name!r} of {owner!r}: total must be at most {MAX_UNITS:,}")
@@ -231,6 +243,17 @@ def _until(it: dict, name: str) -> float | None:
         return iso(str(until))
     except ValueError:
         raise ValueError(f"paused_until of {name!r} must be an ISO time with its offset") from None
+
+
+def _done_at(value, what: str) -> float:
+    """A stage's `done`: the ISO time it was done by hand, as epoch seconds. Anything else (a number,
+    true, a time that does not parse) is refused as a typo: it must never mark work done."""
+    if isinstance(value, str):
+        try:
+            return iso(value)
+        except (ValueError, OverflowError, OSError):
+            pass
+    raise ValueError(f"{what}: done must be the ISO time it was done, not {value!r}"[:120])
 
 
 def _planned_release(n, where: str) -> NextRelease:

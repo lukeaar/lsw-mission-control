@@ -22,6 +22,7 @@ from lsw_mission_control.progress import (
     job_file,
     progress_of,
     short_name,
+    stages_active_since,
     stages_progress,
     stages_started,
     wait_for,
@@ -175,6 +176,46 @@ def test_null_stage_done_once_a_later_one_starts():
     assert sp(stages, {}).marks[0][0] == "○"
     p = sp(stages, {"build:x": a("build:x", "running", NOW - 60, NOW)})
     assert p.marks[0][0] == "●"
+
+
+HAND = ("check", {"done": NOW - HOUR}, 30.0)  # done by hand an hour ago (parse_stage keeps epoch seconds)
+
+
+def test_a_stage_done_by_hand_reads_done_with_no_agent_and_no_progress_file(tmp_path):
+    p = sp([HAND], {})
+    assert p.current == "done" and [m[0] for m in p.marks] == ["●"] and p.end == NOW - HOUR and p.start is None
+    assert stages_started([HAND], {})
+    # the work after it has begun: a null stage before it is behind it, and so is a job whose progress
+    # file is gone; its planned time is behind the row, and what follows it is queued
+    stages = [("your sign-off", None, 0.0), job(tmp_path / "gone.jsonl", total=3, minutes=60.0), HAND] + STAGES
+    p = sp(stages, {})
+    assert [m[0] for m in p.marks] == ["●", "●", "●", "○", "○", "○"] and p.current == "queued"
+    assert p.remaining == (60 + 20 + 30 * 0.7) * 60 and p.fraction == pytest.approx(30 / (30 + 101))
+    # a job's spec marked done where it stands, its job still running
+    prog = tmp_path / "p.jsonl"
+    made(prog, NOW - HOUR)
+    assert sp([job(prog, total=10, minutes=120.0, done=NOW - 60)], {}).current == "done"
+
+
+def test_a_stage_done_by_hand_never_makes_the_stages_after_it_run_again():
+    """it has no start: a build that returned before the time the plan gives is still done (an agent's
+    re-run of the stage at that time would make it run again)"""
+    built = {"build:x": a("build:x", "done", NOW - 2 * HOUR, NOW - 1.5 * HOUR)}
+    assert sp([HAND, STAGES[0]], built).current == "done"
+    rerun = {**built, "check:x": a("check:x", "done", NOW - HOUR, NOW - 50 * MIN)}
+    assert sp([("check", "check:x", 30.0), STAGES[0]], rerun).current == "queued"
+
+
+def test_a_review_done_by_hand_leaves_the_fix_to_the_fix_share():
+    """no findings are recorded: whether a fix is needed is not known until it runs"""
+    built = {"build:x": a("build:x", "done", NOW - 3 * HOUR, NOW - 2 * HOUR)}
+    p = sp([STAGES[0], ("review", {"done": NOW - HOUR}, 20.0), STAGES[2]], built)
+    assert [m[0] for m in p.marks] == ["●", "●", "○"] and p.remaining == 30 * 0.7 * 60
+
+
+def test_a_stage_done_by_hand_since_a_hold_ended_resumed_the_work():
+    assert stages_active_since([HAND, STAGES[0]], {}, NOW - 2 * HOUR)
+    assert not stages_active_since([HAND, STAGES[0]], {}, NOW - 30 * MIN)
 
 
 def test_an_earlier_rerun_invalidates_later_stages():

@@ -12,6 +12,7 @@ import os
 from typing import TYPE_CHECKING, Callable, NamedTuple, Sequence
 
 from lsw_mission_control.agents import died_after, review_needs_fix
+from lsw_mission_control.plan import done_by_hand
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import iso
 
@@ -192,7 +193,10 @@ def progress_of(path: str) -> tuple[int, float | None, float | None]:
 
 
 def stage_begun(spec, labels: dict) -> bool:
-    """A stage has begun: one of its agents is known, or its detached job's progress file exists."""
+    """A stage has begun: one of its agents is known, its detached job's progress file exists, or it
+    was done by hand."""
+    if done_by_hand(spec) is not None:
+        return True
     if isinstance(spec, dict):
         return job_file(spec["progress"]) is not None
     return any(x in labels for x in (spec if isinstance(spec, list) else [spec] if spec else []))
@@ -264,6 +268,17 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
     for i, (name, spec, planned) in enumerate(stages):
         minutes = planned * (cal.get(name, 1.0) if cal is not None else 1.0)
         later_started = any(begun[i + 1:])
+        done_at = done_by_hand(spec)
+        if done_at is not None:
+            # Done by hand at the time the plan gives: no agent and no progress file. Its planned time
+            # is behind the row. It has no start, so it never makes the stages after it run again;
+            # and a review done by hand records no findings, so whether a fix is needed is not known.
+            marks.append(("●", C.GREEN))
+            ends.append(done_at)
+            progressed += minutes * 60
+            if name == "review":
+                prev_review = None
+            continue
         if isinstance(spec, dict):
             total = int(spec["total"])
             job = job_file(spec["progress"])
@@ -491,9 +506,15 @@ def item_active_since(plan: Plan, item: Item, labels: dict, since: float) -> boo
 def stages_active_since(stages: Sequence, labels: dict, since: float) -> bool:
     """Any of the work of these stages has run since `since`, or runs now: an agent of it was active
     at or after that time, or has not gone silent (a long tool call writes nothing), or a detached job
-    of it is running or finished a unit since. An attempt that died counts as the run it was: where a
-    label reads the result before it (latest_by_label), the one that died rides along (died_after)."""
+    of it is running or finished a unit since, or a stage of it was done by hand since. An attempt that
+    died counts as the run it was: where a label reads the result before it (latest_by_label), the one
+    that died rides along (died_after)."""
     for _name, spec, _m in stages:
+        done_at = done_by_hand(spec)
+        if done_at is not None:
+            if done_at >= since:
+                return True
+            continue
         if isinstance(spec, dict):
             job = job_file(spec["progress"])
             if job is not None and (job.units < int(spec["total"]) or (job.last or 0.0) >= since):

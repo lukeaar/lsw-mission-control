@@ -21,7 +21,8 @@ lsw-mission-control/
     theme.py              Theme, LSW_DARK, the palette C, use(), theme_from(), contrast(), ink_on()
     util.py               now/set_clock/local_now, iso, human, ago, clock, run, num, write_json, fit, count
     store.py              Store (thread-safe; get/set/update/snapshot, data under lock)
-    plan.py               parse_stage, parse_plan, Held, Item/OtherItem/NextItem/NextRelease/Plan, PlanLoader
+    plan.py               parse_stage, done_by_hand, parse_plan, Held, Item/OtherItem/NextItem/NextRelease/Plan,
+                          PlanLoader
     notes.py              Notes, read_notes, NotesLoader
     agents.py             transcript_facts, run_ended, stopped_with_run, scan_agents, final_merge_labels, label_names,
                           findings_of, stored_ok, store_since, FinishedStore, journal_seq, later_attempt,
