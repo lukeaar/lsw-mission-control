@@ -333,6 +333,10 @@ Fixed before the first release:
   plan still to come. Its turn starts when the last stage before it finished, if that is after its
   file was made, and its time so far, its overrun and its units' pace count from then; a unit
   finished before then shows it ran beside them, so it is timed from its file, as before.
+- A row that waits on one whose name begins with "After" no longer reads `after after`: the stage
+  names what it waits on by the name's first word, which there was "after" itself. It now reads what
+  follows that word, as much as the stage column holds (`After the lean merge: the extras` reads
+  `after the lean…`), in the release, other work, next and later panels alike.
 
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
 `[[plugins]]` name; `validate_options` names the type it expected; `render.widgets.fit_stages`,

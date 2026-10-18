@@ -694,6 +694,21 @@ def test_item_helpers(tmp_path):
     assert short_name(" ", plan.items) == ""  # a blank name has no first word (it used to raise)
 
 
+@pytest.mark.parametrize("name, short", [
+    # a name that begins with "After" is a wait of its own: what follows that word, so a row after it
+    # reads "after the lean merge…", never "after after"
+    ("After the lean merge: the extras, then the full chain", "the lean merge: the extras, then the full chain"),
+    ("after Monday's sync", "Monday's sync"),
+    ("AFTER: the merge", "the merge"),
+    ("Afterwards, the cleanup", "afterwards,"),  # another word: its first word, as any name's
+    ("After", "after"),  # nothing follows it: the word is the name
+    ("Merge, after the review", "merge,"),
+])
+def test_a_name_that_begins_with_after_is_never_said_twice(name, short):
+    plan = parse_plan({"release": "1", "items": [{"name": name, "key": "k", "build": 1}]})
+    assert short_name("k", plan.items) == short and short_name(name, plan.items) == short
+
+
 def prog(remaining, current="build"):
     return Prog(remaining, current)
 

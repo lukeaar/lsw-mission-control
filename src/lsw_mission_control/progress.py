@@ -556,9 +556,14 @@ def item_minutes(plan: Plan, item: Item, cal: Calibration) -> float:
 
 
 def short_name(ref: str | None, items: Sequence[Item]) -> str:
-    """A dependency as two words fit: 'integrate' (a key) or an item name → 'merge'."""
+    """A dependency as two words fit: 'integrate' (a key) or an item name → 'merge'. A name that begins
+    with the word "After" says when it runs: what follows that word is its short name, cut by the stage
+    column ('After the lean merge: …' → 'the lean merge: …'), so the row that waits on it reads "after
+    the lean…", where its first word made it "after after"."""
     if not ref:
         return ""
     name = next((it.name for it in items if it.key == ref), ref)
     words = name.split()
+    if len(words) > 1 and words[0].lower().rstrip(":,;.") == "after":
+        return " ".join(words[1:])
     return words[0].lower() if words else ""

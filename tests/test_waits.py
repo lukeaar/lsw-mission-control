@@ -446,3 +446,47 @@ def test_parse_paused_until():
     assert a.paused is True and a.paused_until == 1791082800.0 and b.paused is False and b.paused_until is None
     with pytest.raises(ValueError, match="paused_until of 'A'"):
         parse_plan({"release": "1", "items": [{"name": "A", "key": "a", "paused_until": "Sunday"}]})
+
+
+# ── a target whose name begins with "After" ────────────────────────────────────────────────────────
+# Its first word made the stage of a row after it read "after after"; the word is said once, and
+# what follows it is cut by the stage column.
+def test_release_after_an_item_named_after_something(tmp_path):
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["items"][2]["name"] = "After the lean merge: profile the cold start"  # startup: dark runs after it
+    p.plan(plan)
+    dark = row(release_text(p), "Dark mode polish")
+    assert "after the lean…" in dark and "after after" not in dark and "~2h37 · 16:50" in dark
+
+
+def test_other_after_a_row_named_after_something(tmp_path):
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["other"][1]["name"] = plan["other"][3]["after"] = "After the merge: docs refresh"
+    p.plan(plan)
+    bench = row(other_text(p), "Benchmarks")
+    assert "after the merg…" in bench and "after after" not in bench and "~1h20 · 15:33" in bench
+
+
+def test_next_and_later_after_an_item_named_after_something(tmp_path):
+    from lsw_mission_control.render.next_release import later_panel
+
+    p = Project(tmp_path)
+    p.notes()
+    plan = release_plan()
+    plan["items"], plan["other"] = plan["items"][:1], []
+    plan["next"] = {"release": "1.5.0", "items": [
+        {"key": "decide", "name": "After 1.4.0: pick the sync engine", "group": "first", "build": 30},
+        {"key": "sync", "name": "Offline sync", "group": "first", "build": 240, "flags": ["after:decide"]}]}
+    plan["later"] = [{"release": "1.6.0", "items": [
+        {"key": "rollout", "name": "After 1.5.0 ships: watch the rollout", "build": 60},
+        {"key": "tune", "name": "Tune the sync", "build": 60, "flags": ["after:rollout"]}]}]
+    p.plan(plan)
+    sync = row(next_text(p), "Offline sync")
+    assert "after 1.4.0: p…" in sync and "after after" not in sync
+    f = p.engine().build_frame(120)
+    tune = row(testing.render_text(later_panel(f, 120, 0), 120)[0], "Tune the sync")
+    assert "after 1.5.0 sh…" in tune and "after after" not in tune

@@ -148,7 +148,9 @@ The same rule for `after` (other), `after:<key>` and `after_all` (items) and `af
 and later), until everything a row runs after is done:
 
 - While nothing of its own is running, its stage reads `after <name>` (the one of them that
-  finishes last).
+  finishes last): its name's first word, or, for a name that begins with the word "After", what
+  follows that word, as much as the stage column holds (`After the merge: docs` reads `after the
+  merg…`, never `after after`).
 - It never finishes before them. Its stages not yet begun come after their time left; a stage it
   began early runs on beside it. Its time left is the longer of the two, plus its stages not
   yet begun.
