@@ -199,7 +199,9 @@ def stage_begun(spec, labels: dict) -> bool:
 
 
 def eta_from_json(path: str | None, key: str, now: float) -> float | None:
-    """An epoch-seconds finish time a detached job writes about itself, if fresh (< 30 min old)."""
+    """An epoch-seconds finish time a detached job writes about itself, if fresh (< 30 min old). It is
+    when the job ends, wherever it stands in its row: stages_progress() counts its time left from the
+    projected end of the stages before it, never from now on top of theirs."""
     if not path:
         return None
     try:
@@ -293,8 +295,12 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
                 planned_left = max(10 * 60, 0.25 * elapsed)
             if projected:
                 # The job's own projection (e.g. a cost model over pages) beats a unit count when
-                # units differ in size, as they do in a largest-first queue.
-                left = max(0.0, projected - now)
+                # units differ in size, as they do in a largest-first queue. It is a finish time, and
+                # the stages before it take their time first: it counts from their projected end (now
+                # plus the time left of those begun), so two jobs that follow each other, each with its
+                # own finish, never count the first one's time twice.
+                previous_end = now + remaining
+                left = max(0.0, projected - max(now, previous_end))
             elif n:
                 # The units' pace since the job began, weighed against the plan as if the plan had
                 # done PACE_PRIOR of the units: the pace takes over as units come in, but one unit

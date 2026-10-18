@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 from types import SimpleNamespace
@@ -357,6 +358,46 @@ def test_a_file_made_after_now_has_run_for_no_time(tmp_path):
     made(prog, NOW + 60)  # a clock that disagrees: never a negative time so far
     p = sp([job(prog, minutes=60.0)], {})
     assert p.current == "rebuild 0/1200" and p.remaining == HOUR and p.fraction == 0.0
+
+
+def at(t: float) -> str:
+    return dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat()
+
+
+def finishes(path, **keys):
+    """An eta file, written a minute ago (fresh), with a finish time under each key."""
+    path.write_text(json.dumps({k: at(t) for k, t in keys.items()}))
+    os.utime(path, (NOW - 60, NOW - 60))
+
+
+def test_back_to_back_jobs_each_count_from_the_projected_end_of_the_stages_before(tmp_path, monkeypatch):
+    """A sample and the full run after it, both begun (their progress files made at launch), each
+    projected by one eta file under its own key: the full run's finish already holds the sample's
+    time. Each counted from now, on top of the other, the row read 2 h + 10 h + the check's hour
+    (13 h) for work that ends in 11 h."""
+    monkeypatch.setattr(progress, "created_at", lambda st: NOW - 3 * HOUR)
+    sample, full, eta = tmp_path / "sample.jsonl", tmp_path / "full.jsonl", tmp_path / "eta.json"
+    units(sample, [NOW - 60] * 40, NOW - 60)
+    full.write_text("")
+    finishes(eta, sample_end=NOW + 2 * HOUR, full_end=NOW + 10 * HOUR)
+    stages = [job(sample, total=87, minutes=500.0, eta_json=str(eta), eta_key="sample_end"),
+              job(full, total=353, minutes=2670.0, eta_json=str(eta), eta_key="full_end"),
+              ("check", "check:x", 60.0)]
+    p = sp(stages, {})
+    assert [m[0] for m in p.marks] == ["◉", "◉", "○"] and p.remaining == 11 * HOUR
+    # the full run's projection is no later than the sample's end: it adds nothing (it ran beside it)
+    finishes(eta, sample_end=NOW + 2 * HOUR, full_end=NOW + HOUR)
+    assert sp(stages, {}).remaining == 3 * HOUR
+    # an agent's stage before a job: the job's finish counts from that stage's end, as a job's does
+    prep = [("prep", "prep:x", 180.0), job(full, total=353, minutes=60.0, eta_json=str(eta), eta_key="full_end")]
+    running = {"prep:x": a("prep:x", "running", NOW - HOUR, NOW)}  # 2 h of its 3 left
+    finishes(eta, full_end=NOW + 5 * HOUR)
+    assert sp(prep, running).remaining == 5 * HOUR
+    finishes(eta, full_end=NOW + HOUR)  # ends within the prep's 2 h: the row ends with the prep
+    assert sp(prep, running).remaining == 2 * HOUR
+    # a job with nothing begun before it counts from now, as it always did
+    finishes(eta, full_end=NOW + 5 * HOUR)
+    assert sp(prep[1:], {}).remaining == 5 * HOUR
 
 
 def test_the_first_units_pace_is_weighed_against_the_plan(tmp_path, monkeypatch):

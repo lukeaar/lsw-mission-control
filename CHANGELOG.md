@@ -299,6 +299,13 @@ Fixed before the first release:
   ending in `…` (the stage column beside them still names the running stage), but never below 16.
   Under 80 columns, where the names get what is left, they keep at least one cell, so a row no
   longer runs past the edge (at 70 columns a finish time read `~10m · 14`, now `~10m · 14:23`).
+- A detached job's projected finish (`eta_json`) counts from the projected end of the stages before
+  it in its row. It counted from now and was added to their time left, so two jobs that follow each
+  other, each projected under its own `eta_key` of one eta file (a sample, then the full run after
+  it), counted the first one's time twice: a sample due in 2 h and a full run due in 10 h read 12 h,
+  days too many on a long run. The full run now adds only what its finish lies past the sample's
+  (8 h), and a job whose finish falls within a stage before it adds nothing; a job with nothing begun
+  before it counts from now, as before.
 
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
 `[[plugins]]` name; `validate_options` names the type it expected; `render.widgets.fit_stages`,

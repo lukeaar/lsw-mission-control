@@ -186,7 +186,10 @@ A detached job:
   finished, its planned minutes, as an agent's stage does; after that, the units' pace since the job
   began (`time so far × units left ÷ units done`) weighed against the plan as if the plan had done
   a tenth of the units (at least one). The pace takes over as units come in, and one unit of a long job
-  does not multiply its time left.
+  does not multiply its time left. The projection is a finish time, so it counts from the projected
+  end of the row's stages before it (from now when they are done): two jobs that follow each other,
+  a sample and the full run after it, say, can each point `eta_key` at their own finish, and the
+  first one's time is not counted twice.
 
 A job that is run again should delete its old progress file rather than empty it: emptying a file
 keeps its creation time where the filesystem keeps one, so the new run would read as begun with the
