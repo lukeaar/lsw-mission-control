@@ -467,12 +467,14 @@ def in_wait_order(n: int, targets_of: Callable[[int], Sequence[int]],
 
 def item_stages(plan: Plan, item: Item) -> list:
     """A release item's stages: its "before" stages (measure, design), then build → review → fix,
-    labelled build:<key> etc. ([] for an item with no key: it is done)."""
+    labelled build:<key> etc. ([] for an item with no key: it is done). One its `by_hand` names was done
+    by hand then: its spec is {"done": <time>}, as a stage done by hand has."""
     key = item.key
     if key is None:
         return []
-    return plan.before(key) + [("build", f"build:{key}", item.build), ("review", f"review:{key}", item.review),
-                               ("fix", f"fix:{key}", item.fix)]
+    by_hand = dict(item.by_hand)
+    return plan.before(key) + [(k, {"done": by_hand[k]} if k in by_hand else f"{k}:{key}", m)
+                               for k, m in (("build", item.build), ("review", item.review), ("fix", item.fix))]
 
 
 def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Calibration, default_fix_share: float,
@@ -542,9 +544,12 @@ def stages_active_since(stages: Sequence, labels: dict, since: float) -> bool:
 
 
 def item_started(plan: Plan, key: str | None, labels: dict) -> bool:
-    """Any of the item's stages has begun (a before-stage's agent, or its job's progress file)."""
+    """Any of the item's stages has begun (a before-stage's agent, or its job's progress file), or was
+    done by hand (a before-stage's {"done"}, or its build, review or fix named in `by_hand`)."""
     if not key:
         return False
+    if any(it.by_hand for it in plan.items if it.key == key):
+        return True
     return stages_started(plan.before(key) + [(k, f"{k}:{key}", 0) for k in ("build", "review", "fix")], labels)
 
 

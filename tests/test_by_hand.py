@@ -100,3 +100,56 @@ def test_a_planned_items_pick_done_by_hand_starts_it(tmp_path):
     plain = text(next_panel, p)
     sync = row(plain, "Offline sync")
     assert "●─○" in sync and "queued" in sync and "~4h00" in sync and "wait on you" not in plain
+
+
+# ── an item's build, review or fix done by hand (`by_hand`) ──────────────────────────────────────────
+def test_a_release_item_done_by_hand_from_end_to_end_reads_done_with_its_key(tmp_path):
+    """a11y's build agent failed; the work was then done by hand, build, review and fix: the row reads
+    done, counted as finished and ready, where only taking its key away (null) could say so"""
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["items"][4]["by_hand"] = {"build": ts(NOW - 3 * HOUR), "review": ts(NOW - 2 * HOUR), "fix": ts(NOW - HOUR)}
+    p.plan(plan)
+    plain = text(release_panel, p)
+    assert "Accessibility audit" not in plain and "● 2 finished" in plain and "2/6 items ready" in plain
+    assert "failed" not in plain.splitlines()[1]  # the header: a11y's failed build no longer counts
+    # its build alone done by hand: the review is next, queued
+    plan["items"][4]["by_hand"] = {"build": ts(NOW - 3 * HOUR)}
+    p.plan(plan)
+    audit = row(text(release_panel, p), "Accessibility audit")
+    assert "●─○─○" in audit and "queued" in audit and "needs rerun" not in audit
+
+
+def test_an_owner_ok_item_whose_build_was_done_by_hand_has_begun(tmp_path):
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["items"][5]["by_hand"] = {"build": ts(NOW - HOUR)}
+    p.plan(plan)
+    security = row(text(release_panel, p), "Security review")
+    assert "your go-ahead" not in security and "●─○─○" in security and "after all" in security
+
+
+def test_a_hold_that_ended_is_resumed_by_a_build_done_by_hand_since(tmp_path):
+    p = Project(tmp_path)
+    midway(p)
+    for done_ago, resumed in ((30 * MIN, True), (2 * HOUR, False)):
+        plan = release_plan()
+        plan["items"][4]["paused_until"] = ts(NOW - HOUR)
+        plan["items"][4]["by_hand"] = {"build": ts(NOW - done_ago)}
+        p.plan(plan)
+        audit = row(text(release_panel, p), "Accessibility audit")
+        assert ("hold ended" not in audit) == resumed and ("not resumed" in audit) != resumed
+
+
+def test_a_planned_items_build_done_by_hand_starts_it(tmp_path):
+    p = Project(tmp_path)
+    midway(p)
+    plan = release_plan()
+    plan["next"] = {"release": "1.5.0", "items": [
+        {"key": "sync", "name": "Offline sync", "build": 240, "review": 45, "by_hand": {"build": ts(NOW - HOUR)}}]}
+    p.plan(plan)
+    plain = text(next_panel, p)
+    sync = row(plain, "Offline sync")
+    assert "●─○" in sync and "queued" in sync and "~45m" in sync and "1 under way" in plain

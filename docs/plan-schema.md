@@ -19,7 +19,8 @@ item is common), so the plan can carry its own explanations.
     {"name": "Search filters", "key": null, "build": 0, "review": 0, "fix": 0},
     {"name": "Export to CSV", "key": "export", "build": 60, "review": 20, "fix": 30,
      "before": [["design", "design:export", 30], ["your sign-off", null, 0]]},
-    {"name": "Dark mode polish", "key": "dark", "build": 45, "review": 15, "fix": 20, "flags": ["after:startup"]},
+    {"name": "Dark mode polish", "key": "dark", "build": 45, "review": 15, "fix": 20, "flags": ["after:startup"],
+     "by_hand": {"build": "2026-09-20T18:10:00+10:00"}},
     {"name": "Security review", "key": "security", "build": 60, "review": 30, "fix": 30, "flags": ["after_all", "owner_ok"]}
   ],
   "other": [
@@ -54,11 +55,14 @@ item is common), so the plan can carry its own explanations.
 | `later` | no | the releases after that one, in order: a list of `next`-shaped releases, each its own panel |
 | *plugin keys* | per plugin | a plugin may own keys; it validates them, and a plan it rejects is not loaded |
 
-### `items`: `{name, key, build, review, fix, flags?, before?, paused?, paused_until?}`
+### `items`: `{name, key, build, review, fix, flags?, before?, paused?, paused_until?, by_hand?}`
 
 - Agents are labelled `build:<key>`, `review:<key>` and `fix:<key>`; `build`/`review`/`fix` are
   planned minutes (scaled by the release's calibration once 3 of a kind have finished).
 - `key: null` counts as done.
+- `by_hand`: `{"build"?: "<ISO time>", "review"?: …, "fix"?: …}`, the ones of those stages done by
+  hand, and when: each reads as a stage whose spec is `{"done": "<ISO time>"}` (below), with no
+  agent. A key other than those three, or a value that is not a time, is refused like any typo.
 - `before`: stages that precede the build (measure, design), in the stage shape below.
 - `flags`: `after:<key>` (one flag per item it runs after, of this release only), `after_all` (after all of the rest),
   `owner_ok` (shows "your go-ahead" until it starts). See "Waits" below.
@@ -101,7 +105,7 @@ item is common), so the plan can carry its own explanations.
   needs at least that stage. Held (`paused`), its stages after the job read held, as any held row's
   do.
 
-### `next`: `{release, about, items: [{key, name, group, before, build, review, fix, flags, paused?, paused_until?}]}`
+### `next`: `{release, about, items: [{key, name, group, before, build, review, fix, flags, paused?, paused_until?, by_hand?}]}`
 
 Planned, not scheduled: no finish time until work on an item starts. Items are grouped by
 `group` (in order); the finished ones are counted (`N done`) and drawn as one row below the rest,
@@ -115,7 +119,8 @@ an item of the same release, else of the nearest release before it that has one 
 `items` last), else of the nearest after it: every planned release's waits are worked out together,
 so an item can wait on this release's work or another planned release's. A key no release holds is
 ignored.
-`build`/`review`/`fix` become stages only when their minutes are above 0. A planned item can be held
+`build`/`review`/`fix` become stages only when their minutes are above 0; `by_hand` marks them done
+by hand, as a release item's (a stage it names that has no minutes is not there to mark). A planned item can be held
 as a release item can (`paused`, `paused_until`): it reads "paused" ("from <when>" for a hold with
 an end), is not under way, the header counts it (`N paused`), and its agents leave Agents at work
 (but for a label a later item shares with a nearer release's item or with other work: Agents at
@@ -180,7 +185,8 @@ and later), until everything a row runs after is done:
 - `{"done": "<ISO time with offset>"}`: done by hand at that time. The stage reads done, with no
   agent and no progress file, and its planned minutes count as work behind the row. Mark work done
   by hand this way, stage by stage, instead of a `null` key (which marks a whole release item done)
-  or taking the row out of the plan. Any other key beside `done` is ignored, so a job's spec can be
+  or taking the row out of the plan; an item's build, review and fix, which its key gives it, are
+  marked in its `by_hand`. Any other key beside `done` is ignored, so a job's spec can be
   marked done where it stands; a `done` that is not a time is refused like any other typo. The stage
   has no start, so it never makes the stages after it run again, and a stage named `review` done by
   hand records no findings: a `fix` after it is weighted by the fix share until it runs.

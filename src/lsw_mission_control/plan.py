@@ -56,6 +56,9 @@ class Item(Held):
     before: tuple[Stage, ...] = ()
     paused: bool = False  # the plan holds it ("paused", or "paused_until"): held() says whether it still does
     paused_until: float | None = None  # when the hold ends (epoch s): its time left and what waits on it count it
+    # its build, review or fix done by hand (`by_hand`): ((kind, when in epoch s), ...); each reads as a
+    # stage whose spec is {"done": when} (progress.item_stages)
+    by_hand: tuple[tuple[str, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -200,7 +203,8 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
             before = tuple(parse_stage(st, it["name"]) for st in _list(it["before"], f"before of {name!r}"))
             pre[str(key)] = before
         until = _until(it, name)
-        items.append(Item(*fields_, before, bool(it.get("paused")) or until is not None, until))
+        items.append(Item(*fields_, before, bool(it.get("paused")) or until is not None, until,
+                          tuple(_by_hand(it, name).items())))
     other = []
     for o in _list(d.get("other", []), "other"):
         o = _obj(o, "each of other")
@@ -245,6 +249,21 @@ def _until(it: dict, name: str) -> float | None:
         raise ValueError(f"paused_until of {name!r} must be an ISO time with its offset") from None
 
 
+def _by_hand(it: dict, name: str) -> dict[str, float]:
+    """An item's `by_hand`: {"build" | "review" | "fix": "<ISO time>"}, the stages its key gives it that
+    were done by hand then, as epoch seconds ({} for none). Each reads as a stage whose spec is
+    {"done": "<ISO time>"}. Another key, or a value that is not a time, is refused as a typo."""
+    raw = it.get("by_hand")
+    if raw is None:
+        return {}
+    out = {}
+    for kind, when in _obj(raw, f"by_hand of {name!r}").items():
+        if kind not in ("build", "review", "fix"):
+            raise ValueError(f"by_hand of {name!r}: {kind!r} is not build, review or fix"[:120])
+        out[kind] = _done_at(when, f"by_hand {kind} of {name!r}")
+    return out
+
+
 def _done_at(value, what: str) -> float:
     """A stage's `done`: the ISO time it was done by hand, as epoch seconds. Anything else (a number,
     true, a time that does not parse) is refused as a typo: it must never mark work done."""
@@ -258,8 +277,8 @@ def _done_at(value, what: str) -> float:
 
 def _planned_release(n, where: str) -> NextRelease:
     """`next`, or one of `later`: {release, about, items: [{key, name, group, before, build, review,
-    fix, flags, paused, paused_until}]}. Planned, not scheduled: build/review/fix become stages only
-    above 0 minutes. An item can be held as a release item can."""
+    fix, flags, paused, paused_until, by_hand}]}. Planned, not scheduled: build/review/fix become stages
+    only above 0 minutes (one named in `by_hand` done by hand). An item can be held as a release item can."""
     n = _obj(n, where)
     nitems = []
     for it in _list(n.get("items", []), f"{where}.items"):
@@ -270,9 +289,11 @@ def _planned_release(n, where: str) -> NextRelease:
             raise ValueError(f"key of {name!r} must be text")
         key = None if key is None else str(key)
         stages = [parse_stage(st, it["name"]) for st in _list(it.get("before", []), f"before of {name!r}")]
+        by_hand = _by_hand(it, name)
         if key:
             mins = {k: int(_number(it.get(k, 0), f"{k} of {name!r}", whole=True)) for k in ("build", "review", "fix")}
-            stages += [parse_stage([k, f"{k}:{key}", mins[k]], it["name"]) for k in ("build", "review", "fix")
+            stages += [(k, {"done": by_hand[k]}, float(mins[k])) if k in by_hand
+                       else parse_stage([k, f"{k}:{key}", mins[k]], it["name"]) for k in ("build", "review", "fix")
                        if mins[k] > 0]
         until = _until(it, name)
         nitems.append(NextItem(name, key, str(it.get("group", "")), tuple(stages),

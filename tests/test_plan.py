@@ -54,6 +54,37 @@ def test_a_stage_done_by_hand_has_its_minutes_checked():
     assert "must be from 0 to" in str(e.value)
 
 
+def test_an_items_build_review_or_fix_done_by_hand():
+    """`by_hand` names the stages an item's key gives it (build, review, fix) that were done by hand: a
+    release item keeps the times (progress.item_stages makes them {"done"} stages), and a planned item's
+    stage is one, unless it has no minutes (then it has no such stage)"""
+    plan = parse_plan({"release": "1", "items": [
+        {"name": "A", "key": "a", "build": 60, "review": 20, "fix": 30,
+         "by_hand": {"build": "2026-09-21T14:13:20Z", "fix": "2026-09-22T00:13:20+10:00"}},
+        {"name": "B", "key": "b", "build": 60}],
+        "next": {"release": "2", "items": [
+            {"name": "N", "key": "n", "build": 60, "review": 0, "by_hand": {"build": "2026-09-21T14:13:20Z",
+                                                                            "review": "2026-09-21T14:13:20Z"}}]}})
+    assert plan.items[0].by_hand == (("build", NOW), ("fix", NOW)) and plan.items[1].by_hand == ()
+    assert plan.next.items[0].stages == (("build", {"done": NOW}, 60.0),)
+
+
+@pytest.mark.parametrize("by_hand, why", [
+    ({"design": "2026-09-21T14:13:20Z"}, "by_hand of 'A': 'design' is not build, review or fix"),
+    ({"build": "yesterday"}, "by_hand build of 'A': done must be the ISO time it was done, not 'yesterday'"),
+    ({"build": 1_790_000_000}, "by_hand build of 'A': done must be the ISO time it was done, not 1790000000"),
+    (["build"], "by_hand of 'A' must be an object"),
+])
+@pytest.mark.parametrize("where", ["items", "next"])
+def test_a_by_hand_that_could_only_be_a_typo_is_refused(by_hand, why, where):
+    item = {"name": "A", "key": "a", "build": 60, "by_hand": by_hand}
+    raw = {"release": "1", "items": [item]} if where == "items" else {"release": "1", "items": [],
+                                                                      "next": {"release": "2", "items": [item]}}
+    with pytest.raises(ValueError) as e:
+        parse_plan(raw)
+    assert str(e.value) == why
+
+
 def test_parse_plan_shapes():
     plan = parse_plan({
         "release": 2, "note": "ignored", "items": [

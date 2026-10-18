@@ -84,8 +84,9 @@ Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, g
                                                       # online (connectivity.Online)
 Plan(release, items, other, next, plugin_data, pre, final_merge_by_hand, later); .before(key) .release_before(i)
                                                       # .planned(): next (if any), then later
-Item(name, key, build, review, fix, flags, before, paused, paused_until); .held(at) .hold_ended(at)   # a hold
-                                                      # with an end ends on the clock, not at the plan's next read
+Item(name, key, build, review, fix, flags, before, paused, paused_until, by_hand); .held(at) .hold_ended(at)
+                                                      # a hold with an end ends on the clock, not at the plan's
+                                                      # next read; by_hand: ((kind, when), ...), each a {"done"} stage
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags, paused,
                                                       # paused_until); .held(at) .hold_ended(at), as Item's (Held)
 NextRelease(release, about, items)                    # `next`, and each release of `later`
