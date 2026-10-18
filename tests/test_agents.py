@@ -93,6 +93,27 @@ def test_transcript_facts_of_a_missing_or_odd_file(tmp_path):
     assert transcript_facts(f) == (NOW - 60, NOW - 60, "", frozenset(), False)
 
 
+@pytest.mark.parametrize("content, action", [
+    ([{"type": "tool_use", "name": "Bash", "input": "pytest > run.log"}], "Bash · "),  # an input that is not an object
+    ([{"type": "tool_use", "name": "Bash", "input": ["pytest > run.log"]}], "Bash · "),
+    (["tool_use > run.log", {"type": "tool_use", "name": "Bash", "input": {"command": "pytest > b.log"}}],
+     "Bash · pytest > b.log"),  # a block that is not an object, beside a call that writes a log
+])
+def test_an_odd_tool_call_is_read_past(tmp_path, content, action):
+    """they raised, and the frame failed while the transcript was in the scan window"""
+    f = tmp_path / "agent-x.jsonl"
+    f.write_text(json.dumps({"timestamp": ts(NOW - 60), "type": "assistant", "message": {"content": content}}) + "\n")
+    assert transcript_facts(f, {})[2:4] == (action, frozenset({"b"} if "b.log" in action else ()))
+
+
+@pytest.mark.parametrize("stamp", ["yesterday", 1_790_000_000, ["2026"], {"t": 1}])
+def test_a_last_record_whose_timestamp_is_not_a_time_is_read_past(tmp_path, stamp):
+    """its last time is the latest record's that is a time (it raised: a failed frame)"""
+    f = tmp_path / "agent-x.jsonl"
+    f.write_text(record(NOW - 60, "user") + json.dumps({"timestamp": stamp, "type": "user"}) + "\n")
+    assert transcript_facts(f, {})[:2] == (NOW - 60, NOW - 60)
+
+
 def record(t: float, kind: str, stop_reason=None, content=("text",)) -> str:
     """One transcript record, as Claude Code writes it (only what the facts read)."""
     msg = {"role": kind, "content": [{"type": c, "name": "Bash", "input": {"description": "x"}} if c == "tool_use"
@@ -120,6 +141,51 @@ def test_a_transcript_whose_last_record_ends_the_models_turn_has_returned(tmp_pa
     # a line that is not a record after it, or half a line still being written, leaves it the last
     f.write_text(f.read_text() + "3\n{\"timestamp\": \"2026")
     assert transcript_facts(f)[4] is ended
+
+
+DELIVERED = '{"success":true,"message":"Report delivered to your caller."}'
+
+
+def handback(t: float, call_id: str = "toolu_h") -> str:
+    """A background agent handing its report back to its caller, as Claude Code writes the call."""
+    return json.dumps({"timestamp": ts(t), "type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": [
+        {"type": "tool_use", "id": call_id, "name": "SubagentHandback",
+         "input": {"message": "Report.", "caller": {"type": "direct"}}}]}}) + "\n"
+
+
+def result(t: float, call_id: str = "toolu_h", text: str = DELIVERED, is_error: bool = False) -> str:
+    """A tool call's result, as Claude Code writes it."""
+    item = {"tool_use_id": call_id, "type": "tool_result", "content": [{"type": "text", "text": text}]}
+    if is_error:
+        item["is_error"] = True
+    return json.dumps({"timestamp": ts(t), "type": "user", "message": {"role": "user", "content": [item]}}) + "\n"
+
+
+@pytest.mark.parametrize("ending, ended", [
+    # Claude Code 2.1.286 and later: the handback and its result are a background agent's last records
+    ([handback(NOW - 1), result(NOW)], True),
+    ([handback(NOW)], True),  # the call, its result not written yet
+    # 2.1.281: the model ended its turn after them
+    ([handback(NOW - 3), result(NOW - 2), json.dumps({"timestamp": ts(NOW - 1), "type": "attachment"}) + "\n",
+      record(NOW, "assistant", "end_turn")], True),
+    # a record after them: a resumed agent's next prompt, or one the model answers next
+    ([handback(NOW - 2), result(NOW - 1), json.dumps({"timestamp": ts(NOW), "type": "user", "message": {
+        "role": "user", "content": "Go on: check the second log too."}}) + "\n"], False),
+    ([handback(NOW - 2), result(NOW - 1), json.dumps({"timestamp": ts(NOW), "type": "attachment"}) + "\n"], False),
+    ([handback(NOW - 3), result(NOW - 2), record(NOW - 1, "assistant", None, ("tool_use",)),
+      record(NOW, "user", content=("tool_result",))], False),  # a later tool call: it went on working
+    # a result that is an error (the model answers it), or another call's
+    ([handback(NOW - 1), result(NOW, text="<tool_use_error>no caller</tool_use_error>", is_error=True)], False),
+    ([handback(NOW - 1), result(NOW, call_id="toolu_other")], False),
+    ([record(NOW - 1, "assistant", None, ("tool_use",)), result(NOW, call_id="toolu_h")], False),  # no handback
+])
+def test_a_background_agent_that_handed_its_report_back_has_returned(tmp_path, ending, ended):
+    """From Claude Code 2.1.286 on, a background agent's transcript ends with its handback
+    (SubagentHandback) and that call's result, and no turn ended after them: it read running for
+    silent_stopped_min after it had returned."""
+    f = tmp_path / "agent-x.jsonl"
+    f.write_text(record(NOW - 60, "user") + record(NOW - 30, "assistant", None, ("tool_use",)) + "".join(ending))
+    assert transcript_facts(f, {})[4] is ended
 
 
 def journal_dir(p: Project, run: str = "wf_lines"):
@@ -624,6 +690,31 @@ def test_agents_at_work_lists_a_sessions_own_agents_beside_the_workflows(tmp_pat
     assert "general-purpose" in rows[1] and "50s ago" in rows[1]
     assert "Check the docs links" not in text and "Survey the old benchmarks" not in text
     assert "fix:export" in text and "Find why the export test flakes" in text and "6 running" in text
+
+
+def test_a_background_agent_that_handed_its_report_back_is_not_at_work(tmp_path):
+    """Claude Code 2.1.286 and later end a background agent's transcript with its handback's result and
+    no turn ended after it (measured on 2.1.286 and 2.1.289, both of them reported completed to their
+    sessions). Three minutes after its handback it read running: listed as `SubagentHandback ·`,
+    counted in `5 running`, until silent_stopped_min. Resumed (a prompt after it), it is at work again."""
+    from lsw_mission_control.agents import scan_session_agents
+
+    p = Project(tmp_path)
+    midway(p)
+    path = p.session_agent("Summarise the failing imports", start_ago=20 * MIN, quiet_s=3 * MIN, handed_back=True,
+                           agent_id="ahb")
+    (a,) = [a for a in scan_session_agents(p.projects, NOW) if a["id"] == "ahb"]
+    assert a["status"] == "done" and a["action"] == "SubagentHandback · "
+    text = agents_text(p)
+    assert "Summarise the failing imports" not in text and "SubagentHandback" not in text and "4 running" in text
+    with open(path, "a") as fh:
+        fh.write(json.dumps({"timestamp": ts(NOW - 30), "type": "user", "message": {
+            "role": "user", "content": "Also list the imports that passed."}}) + "\n")
+    os.utime(path, (NOW - 30, NOW - 30))
+    (a,) = [a for a in scan_session_agents(p.projects, NOW) if a["id"] == "ahb"]
+    assert a["status"] == "running"
+    row = next(line for line in agents_text(p).splitlines() if "Summarise the failing imports" in line)
+    assert "30s ago" in row
 
 
 def test_a_long_name_never_takes_the_row(tmp_path):

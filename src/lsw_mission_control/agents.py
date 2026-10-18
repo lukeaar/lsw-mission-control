@@ -39,11 +39,15 @@ END_SLACK_S = 60.0
 # A log belongs to the agent whose shell command WRITES it (> x.log, >> x.log, | tee x.log).
 _LOG_WRITE = re.compile(r"(?:>>?|\btee\s+(?:-a\s+)?)\s*[^\s;|&<>]*?([\w.-]+)\.log\b")
 TAIL_BYTES = 200_000
-# A transcript whose last record is the model ending its turn (an assistant message whose stop_reason is
-# one of these) has returned. Measured on Claude Code's transcripts of agents sessions launched: every
-# finished one ends so, and one cut off ends on a tool call or its result. Any other end (an API error,
-# an older Claude Code that kept no stop reason) reads running until the silence rule says it stopped.
+# How an agent a session launched ends its transcript once it has returned, measured on Claude Code's
+# transcripts of them (2.1.219 to 2.1.289): every finished one up to 2.1.281 with the model ending its
+# turn, an assistant message whose stop_reason is one of TURN_ENDED (a background one after its handback);
+# a background one from 2.1.286 on with its handback (HANDBACK: the call, then its result) and no turn
+# ended after it. Any other end (cut off on a tool call or its result, an API error, an older Claude Code
+# that kept no stop reason) reads running until the silence rule says it stopped.
 TURN_ENDED = ("end_turn",)
+# The tool a background agent hands its report back to its caller with.
+HANDBACK = "SubagentHandback"
 
 
 def _ends_turn(rec: dict | None) -> bool:
@@ -52,11 +56,35 @@ def _ends_turn(rec: dict | None) -> bool:
     return isinstance(msg, dict) and msg.get("stop_reason") in TURN_ENDED
 
 
+def _tool_input(item) -> dict:
+    """A tool call's input: {} for a content block that is not an object, or an input that is not one."""
+    inp = item.get("input") if isinstance(item, dict) else None
+    return inp if isinstance(inp, dict) else {}
+
+
+def _handed_back(call: dict | None, holder: dict | None, last: dict | None) -> bool:
+    """The latest tool call (`call`, in the record `holder`) handed the agent's report back to its caller
+    (HANDBACK), and the transcript's last record is that call or its result: a background agent of Claude
+    Code 2.1.286 or later has returned then. A record after them (a resumed agent's next prompt), or a
+    result that is an error (the model answers it), reads running."""
+    if call is None or call.get("name") != HANDBACK or last is None:
+        return False
+    if last is holder:
+        return True
+    msg = last.get("message") if last.get("type") == "user" else None
+    content = msg.get("content") if isinstance(msg, dict) else None
+    return isinstance(content, list) and any(
+        isinstance(item, dict) and item.get("type") == "tool_result" and item.get("tool_use_id") == call.get("id")
+        and not item.get("is_error") for item in content)
+
+
 def transcript_facts(path: Path, cache: dict | None = None) -> tuple[float | None, float | None, str, frozenset, bool]:
     """First and last timestamps of an agent transcript, its latest tool call, the scratchpad logs its
-    recent tool calls mention (so a test log can be named after its agent), and whether its last record
-    is the model ending its turn (_ends_turn(): a session's own agent has returned then). `cache`: where
-    its facts are kept (_ts_cache by default)."""
+    recent tool calls mention (so a test log can be named after its agent), and whether it has returned:
+    its last record is the model ending its turn (_ends_turn()), or its handback or that call's result
+    (_handed_back()). `cache`: where its facts are kept (_ts_cache by default). A record of an odd shape
+    (a tool call whose input is not an object, a timestamp that is not a time) is read past, never a
+    failed frame."""
     cache = _ts_cache if cache is None else cache
     try:
         st = path.stat()
@@ -70,6 +98,7 @@ def transcript_facts(path: Path, cache: dict | None = None) -> tuple[float | Non
     action = ""
     logs: set = set()
     last = None  # its last record
+    call = holder = None  # its latest tool call, and the record that holds it
     try:
         with open(path, "rb") as f:
             first = f.readline()
@@ -87,8 +116,8 @@ def transcript_facts(path: Path, cache: dict | None = None) -> tuple[float | Non
             except Exception:
                 continue
             for item in content if isinstance(content, list) else []:
-                cmd = (item.get("input") or {}).get("command") if isinstance(item, dict) else None
-                if item.get("type") == "tool_use" and isinstance(cmd, str):
+                cmd = _tool_input(item).get("command")
+                if isinstance(cmd, str) and item.get("type") == "tool_use":
                     logs.update(_LOG_WRITE.findall(cmd))
         for raw in reversed(tail):
             try:
@@ -100,21 +129,25 @@ def transcript_facts(path: Path, cache: dict | None = None) -> tuple[float | Non
             if last is None:
                 last = rec
             if t1 is None and rec.get("timestamp"):
-                t1 = iso(rec["timestamp"])
+                try:
+                    t1 = iso(rec["timestamp"])
+                except (TypeError, AttributeError, ValueError, OverflowError):
+                    pass  # not a time: an earlier record's says when it was last heard from
             msg = rec.get("message")
             content = msg.get("content") if isinstance(msg, dict) else None
-            if not action and isinstance(content, list):
+            if call is None and isinstance(content, list):
                 for item in reversed(content):
                     if isinstance(item, dict) and item.get("type") == "tool_use":
-                        inp = item.get("input") or {}
+                        call, holder = item, rec
+                        inp = _tool_input(item)
                         what = inp.get("description") or inp.get("command") or inp.get("file_path") or inp.get("pattern") or ""
                         action = f"{item.get('name')} · {str(what).splitlines()[0] if what else ''}"
                         break
-            if t1 and action:
+            if t1 and call is not None:
                 break
     except OSError:
         pass
-    facts = (t0, t1, action, frozenset(logs), _ends_turn(last))
+    facts = (t0, t1, action, frozenset(logs), _ends_turn(last) or _handed_back(call, holder, last))
     cache[str(path)] = (key, facts)
     return facts
 
@@ -236,12 +269,13 @@ def scan_session_agents(projects_dir: Path, now: float, window_s: float = 48 * 3
     written to within it). Claude Code keeps its transcript beside the session's workflow runs,
     `<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json` beside it ({"agentType",
     "description", ...}). Each is an agent as scan_agents() gives one, marked `session`: labelled by its
-    description, its phase its agent type, its run the session; done once its transcript's last record
-    is the model ending its turn, else running (the silence rule then tells one cut off, as for a
-    workflow's). It has no attempts and no result, and no plan row reads it (a stage reads workflow
-    agents, whose results their journals keep): Agents at work lists it, and names a test log it
-    writes after it. `skip`: agent ids a workflow's journal gives (an agent is listed once). A
-    transcript with no meta file beside it was not launched as an agent (a forked conversation)."""
+    description, its phase its agent type, its run the session; done once it has returned (its
+    transcript ends with the model ending its turn, or with its handback: transcript_facts()), else
+    running (the silence rule then tells one cut off, as for a workflow's). It has no attempts and no
+    result, and no plan row reads it (a stage reads workflow agents, whose results their journals
+    keep): Agents at work lists it, and names a test log it writes after it. `skip`: agent ids a
+    workflow's journal gives (an agent is listed once). A transcript with no meta file beside it was
+    not launched as an agent (a forked conversation)."""
     agents = []
     cutoff = now - window_s
     read: set = set()

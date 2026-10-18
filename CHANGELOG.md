@@ -72,11 +72,15 @@ Agents at work lists the agents a session launches itself, outside any workflow,
 workflows' agents, within the same scan window. Claude Code keeps their transcripts beside the
 session's workflow runs (`<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json`); each
 reads by its description, with its agent type (`Explore`, `general-purpose`) under `for`, and is at
-work until its transcript's last record ends the model's turn, or it falls silent past `[agents]
-silent_stopped_min`. A test log its command writes is named after it. No row reads one: a stage reads
-workflow agents, whose results their journals keep. The agent column is at most a third of the
-panel, cut with `…`: a long name (a description, or a long label) took the whole row, leaving its
-times and what it is doing no room (at 80 columns, none at all).
+work until it has returned, or it falls silent past `[agents] silent_stopped_min`. It has returned
+when its transcript's last record ends the model's turn, or is its handback (`SubagentHandback`) or
+that call's result: Claude Code 2.1.286 and later end a background agent so, with no turn ended
+after it, where 2.1.281 still ended one. A record after the handback (a resumed agent's next
+prompt), or a handback whose result is an error, reads at work again. A test log its command writes
+is named after it. No row reads one: a stage reads workflow agents, whose results their journals
+keep. The agent column is at most a third of the panel, cut with `…`: a long name (a description,
+or a long label) took the whole row, leaving its times and what it is doing no room (at 80 columns,
+none at all).
 
 Fixed before the first release:
 
@@ -341,6 +345,11 @@ Fixed before the first release:
   names what it waits on by the name's first word, which there was "after" itself. It now reads what
   follows that word, as much as the stage column holds (`After the lean merge: the extras` reads
   `after the lean…`), in the release, other work, next and later panels alike.
+- An agent transcript's record of an odd shape no longer fails every frame while the transcript is
+  in the scan window (the dashboard showed only `Mission control error`): a tool call whose input,
+  or a message block, is not an object, and a last record whose timestamp is not a time. They are
+  read past: such a call reads with no detail, and the agent was last heard from at the latest
+  record whose timestamp is a time.
 
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
 `[[plugins]]` name; `validate_options` names the type it expected; `render.widgets.fit_stages`,

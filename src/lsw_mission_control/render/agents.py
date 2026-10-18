@@ -55,8 +55,9 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
     newest = latest_attempts([a for a in agents if a["status"] == "done" or id(a) in live])
     running = [a for a in running if newest[(a["run"], a["label"])] is a]
     # The agents sessions launched themselves, outside any workflow: each one its own (no attempt
-    # replaces another, and no plan row holds one), at work until its transcript ends its turn or it
-    # falls silent, as a workflow's does.
+    # replaces another, and no plan row holds one), at work until it has returned (its transcript ends
+    # its turn, or ends with its handback: agents.transcript_facts()) or it falls silent, as a
+    # workflow's does.
     running += [a for a in f.session_agents if a["status"] == "running" and a["t1"] and t_now - a["t1"] < silent_s]
     running.sort(key=lambda a: -(a["t1"] or 0))
     shown, hidden = running, []

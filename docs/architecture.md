@@ -353,9 +353,10 @@ Panels:
 - The side row: plugin cards, then Repository.
 - Agents at work and the recent test suites: workflow agents, and beside them the agents a session
   launched itself (`<session>/subagents/agent-<id>.jsonl` with its `.meta.json`: its description, its
-  agent type under `for`; running until its transcript's last record ends the model's turn, or silent
-  past `silent_stopped_min`; no row reads one, and the finished store never keeps one); the agent
-  column at most a third of the width, cut with `…`.
+  agent type under `for`; running until it has returned, its transcript's last record ending the
+  model's turn or being its handback (`SubagentHandback`) or that call's result, or silent past
+  `silent_stopped_min`; no row reads one, and the finished store never keeps one); the agent column at
+  most a third of the width, cut with `…`.
 - Model usage: meters, stale data as a faint meter with a muted % and the subtitle in amber (no note
   on the rows, which would widen Model usage and push the logo out of a 99-column window),
   resets (and a passed reset), status (`warning: close to a limit`, `limit reached`, others),

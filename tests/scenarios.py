@@ -103,12 +103,15 @@ class Project:
 
     def session_agent(self, description: str, *, agent_type: str = "general-purpose", start_ago: float = 30 * MIN,
                       quiet_s: float = 30.0, action: str = "Bash · Run the unit tests", returned: bool = False,
-                      writes_log: str | None = None, agent_id: str | None = None, session: str = "sess-1",
-                      meta: object = True) -> Path:
+                      handed_back: bool = False, writes_log: str | None = None, agent_id: str | None = None,
+                      session: str = "sess-1", meta: object = True) -> Path:
         """An agent a session launched itself, outside any workflow, as Claude Code writes one:
         `<session>/subagents/agent-<id>.jsonl` and `agent-<id>.meta.json` beside it (`meta`: False writes
         none, a dict or text is written as it is). Its transcript's last record is its latest tool call's
-        result, or, `returned`, the model ending its turn. Returns the transcript's path."""
+        result; or, `returned`, the model ending its turn; or, `handed_back`, its handback's result, as a
+        background agent of Claude Code 2.1.286 and later ends: its latest tool call's result, then the
+        SubagentHandback call and its result, with no turn ended after them. Returns the transcript's
+        path."""
         d = self.projects / session / "subagents"
         d.mkdir(parents=True, exist_ok=True)
         aid = agent_id or "a" + hashlib.md5(f"{session}/{description}/{len(list(d.glob('*.jsonl')))}".encode()).hexdigest()[:16]
@@ -127,6 +130,16 @@ class Project:
         if returned:
             lines.append({"timestamp": ts(t1), "type": "assistant", "message": {
                 "role": "assistant", "stop_reason": "end_turn", "content": [{"type": "text", "text": "Done."}]}})
+        elif handed_back:
+            lines += [
+                {"timestamp": ts(t1 - 0.8), "type": "user", "message": {
+                    "role": "user", "content": [{"type": "tool_result", "content": "ok"}]}},
+                {"timestamp": ts(t1 - 0.5), "type": "assistant", "message": {"role": "assistant", "stop_reason": None,
+                 "content": [{"type": "tool_use", "id": "toolu_h", "name": "SubagentHandback",
+                              "input": {"message": "Report: done.", "caller": {"type": "direct"}}}]}},
+                {"timestamp": ts(t1), "type": "user", "message": {"role": "user", "content": [
+                    {"tool_use_id": "toolu_h", "type": "tool_result", "content": [
+                        {"type": "text", "text": '{"success":true,"message":"Report delivered to your caller."}'}]}]}}]
         else:
             lines.append({"timestamp": ts(t1), "type": "user", "message": {
                 "role": "user", "content": [{"type": "tool_result", "content": "ok"}]}})
