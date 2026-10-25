@@ -333,7 +333,9 @@ def test_bounded_never_waits_past_its_timeout_and_never_doubles_a_hung_call():
 @contextlib.contextmanager
 def dead_address():
     """A local address that never answers a connect: its listener never accepts and its queue is
-    full, so the kernel drops the SYN (as on a network whose IPv6 is routed but broken)."""
+    full, so the kernel drops the SYN (as on a network whose IPv6 is routed but broken). A kernel that
+    answers a connect to a full queue instead, accepting it or resetting it (macOS 27, MEASURED
+    2026-10-25: ConnectionResetError on every probe), has no such address: the test is skipped."""
     lst = socket.socket()
     lst.bind(("127.0.0.1", 0))
     lst.listen(1)
@@ -350,6 +352,8 @@ def dead_address():
                 probe.connect(addr)
             except TimeoutError:
                 break
+            except ConnectionResetError:
+                continue  # answered, with a reset: not dead either
             finally:
                 probe.close()
         else:
