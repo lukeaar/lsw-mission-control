@@ -19,6 +19,9 @@ if TYPE_CHECKING:
     from lsw_mission_control.engine import Frame
 
 
+FOR_MIN = 36  # the least the "for" column gets of a row too narrow for every column whole
+
+
 def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
     ac = f.cfg.agents
     silent_s, idle_amber, idle_red, max_rows = ac.silent_stopped_min * 60, ac.idle_amber_min * 60, ac.idle_red_min * 60, ac.rows
@@ -68,27 +71,41 @@ def agents_panel(f: Frame, width: int, logs: list[tuple[str, str, float]]):
         shown = sorted(rest + red, key=lambda a: -(a["t1"] or 0))
         hidden = [a for a in running if a not in shown]
     names = f.names
-    t = Table(box=None, show_header=True, header_style=f"bold {C.FAINT}", pad_edge=False, expand=True)
-    # At most a third of the width, cut with "…": a session's agent is named by its description, and a
-    # long name (a long label too) took the whole row, leaving its times and doing now no room.
-    t.add_column("agent", no_wrap=True, style=C.ACCENT_SOFT, max_width=max(16, width // 3), overflow="ellipsis")
-    t.add_column("for", no_wrap=True, style=C.MUTED, max_width=36, overflow="ellipsis")
-    t.add_column("running", no_wrap=True, style=C.MUTED, justify="right")
-    t.add_column("active", no_wrap=True, justify="right")
-    t.add_column("doing now", no_wrap=True, overflow="ellipsis", style=C.TEXT, ratio=1)
+    rows = []
     for a in shown:
         idle = t_now - (a["t1"] or t_now)
         col = C.GREEN if idle < idle_amber else (C.AMBER if idle < idle_red else C.RED)
         what = names.get(f"{a['run']}/{a['label']}") or names.get(a["label"]) or a["phase"]
         # Outside text (labels, item names, a tool call's description) is never read as markup:
         # "[/x]" would fail the frame and "[b]" would silently vanish.
-        t.add_row(Text(a["label"]), Text(what), human(t_now - (a["t0"] or t_now)), Text(ago(a["t1"]), style=col),
-                  Text(a["action"] or ""))
+        rows.append((Text(a["label"]), Text(what), Text(human(t_now - (a["t0"] or t_now))), Text(ago(a["t1"]), style=col),
+                     Text(a["action"] or "")))
     if hidden:
         quietest = max(t_now - a["t1"] for a in hidden)
-        t.add_row(Text(f"+{len(hidden)} more · quietest {human(quietest)}", style=C.FAINT), "", "", "", "")
+        rows.append((Text(f"+{len(hidden)} more · quietest {human(quietest)}", style=C.FAINT),) + (Text(""),) * 4)
     if not running:
-        t.add_row(Text("no agents running", style=C.FAINT), "", "", "", "")
+        rows.append((Text("no agents running", style=C.FAINT),) + (Text(""),) * 4)
+    heads = ("agent", "for", "running", "active", "doing now")
+    w = [max([len(h)] + [r[i].cell_len for r in rows]) for i, h in enumerate(heads)]
+    # At most a third of the width, cut with "…": a session's agent is named by its description, and a
+    # long name (a long label too) took the whole row, leaving its times and doing now no room.
+    w[0] = min(w[0], max(16, width // 3))
+    # "for" and "doing now" share the row the other columns leave (the panel's border and padding, 4,
+    # and two cells between columns): doing now its whole text where it fits, but never so much that
+    # "for" gets under FOR_MIN, the width it always had; "for" the rest, up to its whole text. With
+    # "for" held at FOR_MIN, a wide window cut every item's name with "…" and left the end of the row
+    # empty (owner, 2026-10-25).
+    room = width - 4 - (w[0] + w[2] + w[3]) - 2 * (len(heads) - 1)
+    floor = min(w[1], FOR_MIN)
+    for_w = max(floor, room - min(w[4], max(0, room - floor)))
+    t = Table(box=None, show_header=True, header_style=f"bold {C.FAINT}", pad_edge=False, expand=True)
+    t.add_column("agent", no_wrap=True, style=C.ACCENT_SOFT, max_width=w[0], overflow="ellipsis")
+    t.add_column("for", no_wrap=True, style=C.MUTED, max_width=for_w, overflow="ellipsis")
+    t.add_column("running", no_wrap=True, style=C.MUTED, justify="right")
+    t.add_column("active", no_wrap=True, justify="right")
+    t.add_column("doing now", no_wrap=True, overflow="ellipsis", style=C.TEXT, ratio=1)
+    for r in rows:
+        t.add_row(*r)
     body = [t]
     if logs:
         lg = Table.grid(padding=(0, 2))

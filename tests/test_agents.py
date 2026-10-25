@@ -728,6 +728,31 @@ def test_a_long_name_never_takes_the_row(tmp_path):
     assert "Audit duplication and abs…" in row and "12m" in row and "5s ago" in row and "Grep" in row
 
 
+def test_a_wide_row_shows_more_of_the_item_name(tmp_path):
+    """"for" was held at 36 columns whatever the width: a wide window cut every item's name with "…" and
+    left the end of the row empty after doing now (owner, 2026-10-25). Doing now keeps its whole text
+    where it fits, "for" takes the rest of the row up to its whole name, and never less than 36."""
+    from lsw_mission_control.render.agents import FOR_MIN
+
+    p = Project(tmp_path)
+    midway(p)
+    plan = json.loads((p.dot / "status_plan.json").read_text())
+    name = ("Accessibility audit of every screen: keyboard order, focus rings, the names a screen reader reads "
+            "and the contrast of every text")
+    next(i for i in plan["items"] if i.get("key") == "a11y")["name"] = name
+    p.plan(plan)
+    p.agent("build:a11y", start_ago=8 * MIN, quiet_s=14, action="Bash · Read the focus ring rules")
+
+    def row(width):
+        return next(line for line in agents_text(p, width).splitlines() if line.startswith("│ build:a11y"))
+
+    assert name in row(240) and "…" not in row(240)  # room for all of it
+    wide = row(160)  # the name cut where doing now, whole, ends the row: no room left empty
+    assert name[:60] in wide and "…" in wide and wide.rstrip(" │").endswith("Bash · Read the focus ring rules")
+    narrow = row(100)
+    assert name[:FOR_MIN - 1] + "…" in narrow  # never under FOR_MIN
+
+
 def test_no_row_reads_a_sessions_own_agent(tmp_path):
     """a session's agent described as a plan label is not that stage's agent: no row reads it (its result
     is not kept, so a review of it would read as finding nothing) and the finished store never keeps it"""

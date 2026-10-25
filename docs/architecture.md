@@ -359,7 +359,9 @@ Panels:
   agent type under `for`; running until it has returned, its transcript's last record ending the
   model's turn or being its handback (`SubagentHandback`) or that call's result, or silent past
   `silent_stopped_min`; no row reads one, and the finished store never keeps one); the agent column at
-  most a third of the width, cut with `…`.
+  most a third of the width, cut with `…`; the item it is for and what it is doing share the rest
+  (doing now whole where it fits, the item never under 36 columns, then as much of its name as the row
+  holds).
 - Model usage: meters as long as the row leaves them (`Level`: one length, at least `METER_W`, which
   Model usage measures with, so they take only room to spare), stale data as a faint meter with a
   muted % and the subtitle in amber (no note on the rows, which would widen Model usage and push the

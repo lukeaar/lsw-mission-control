@@ -95,6 +95,10 @@ side from 136 columns; at 135 the tables stack, 12 rows, beside a square logo of
 compares Model usage drawn at two widths by the words it shows, without the meters, so a longer meter
 or the tables' arrangement is no change, while a row cut short still is.
 
+Agents at work fills a wide row: the item an agent is for took 36 columns whatever the width, so a
+wide window cut every name with `…` and left the end of the row empty. What it is doing keeps its whole
+text where it fits, and the item takes the rest of the row, up to its whole name (never under 36).
+
 Fixed before the first release:
 
 - The logo shows in a window under 100 columns wide, and never cuts Model usage short. It was drawn
