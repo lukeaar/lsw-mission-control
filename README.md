@@ -119,7 +119,8 @@ freezes the clock.
   amber, red), and their latest tool call; then the recent test suites in the session
   scratchpads, each named after the agent whose command writes its log.
 - **Model usage**: the 5-hour and weekly plan limits with their resets, tokens used (last 5 h,
-  today, 7 days) and by model; beside it the logo, turning slowly — a frozen dashboard stops.
+  today, 7 days) and by model, side by side in a wide window, where the meters grow to fill the
+  row; beside it the logo, turning slowly — a frozen dashboard stops.
 - **The last row**: the Key, and at the very right whether this computer is on the internet and
   switching networks is safe now.
 

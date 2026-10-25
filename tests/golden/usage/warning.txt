@@ -1,5 +1,5 @@
 ╭─  Model usage  ──────────────────────────────────────────────────────────────────────────────────╮
-│ 5-hour       ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱   85%   resets 15:13 · in 1h00                             │
+│ 5-hour       ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱▱▱▱▱▱   85%   resets 15:13 · in 1h00 │
 │ status       warning: close to a limit                                                           │
 │                                                                                                  │
 │ tokens        output  input  cache writes  cache reads                                           │

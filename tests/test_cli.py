@@ -153,7 +153,8 @@ def test_self_check_refuses_a_fault_confined_to_the_narrower_logo(tmp_path, monk
 
 def test_self_check_draws_the_narrower_logo_where_no_fixed_size_does(tmp_path, monkeypatch, capsys):
     """A status the panel does not know is drawn as it comes, and a long one widens Model usage (98
-    columns here), so the logo is square at 150 and absent at 99 and 80, and only the tightest width
+    columns here), so the logo is square at 150 (beside 8 rows: the tables side by side) and absent at
+    99 and 80, and only the tightest width
     (98 + 17 = 115) draws it narrower than square: the same fault, confined to that path, is refused
     there, in the first pass already (the status row makes Model usage 6 rows before any token is
     counted). Stale plan data widened Model usage this way (" · as of HH:MM") until its rows stopped
@@ -173,7 +174,7 @@ def test_self_check_draws_the_narrower_logo_where_no_fixed_size_does(tmp_path, m
     for width in (150, 99, 80):
         e.frame(testing.record_console(width))
         geoms[width] = e.logo.geom
-    assert geoms[150] == (13, 28) and geoms[99] is None and geoms[80] is None
+    assert geoms[150] == (8, 18) and geoms[99] is None and geoms[80] is None
     assert in_process_self_check(p) == 1
     assert capsys.readouterr().err.strip().splitlines()[-1] == \
         "self-check: the logo is drawn where the live view does not find it (115x60)"

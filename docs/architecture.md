@@ -224,7 +224,9 @@ two writers of one real `finished.json` must never race.
   own engine's memory (`SELF_CHECK_TOKENS`), as a window runs, where Model usage is taller. Each pass
   draws at 150×50, 99×60 and 80×40 (`SELF_CHECK_SIZES`) and at the tightest width the logo fits in:
   Model usage's narrowest whole width (`usage_fit`: drawn narrower and narrower until a row, a
-  table or its subtitle is cut short; not `usage_row`'s Measurement) plus the smallest logo panel
+  table or its subtitle is cut short, read by the words it shows (`shown`: without the meters, which
+  are as long as the row, so neither a meter's length nor the by-model table moving under the token
+  table is a change); not `usage_row`'s Measurement) plus the smallest logo panel
   and the space before it, where with token counts the logo is narrower than square. The first
   frame also draws the pinned row's other states (not connected, network-critical, safe, unknown);
   every frame turns the logo, and the key parser is fed last. It reads each frame's errors first,
@@ -358,15 +360,19 @@ Panels:
   model's turn or being its handback (`SubagentHandback`) or that call's result, or silent past
   `silent_stopped_min`; no row reads one, and the finished store never keeps one); the agent column at
   most a third of the width, cut with `…`.
-- Model usage: meters, stale data as a faint meter with a muted % and the subtitle in amber (no note
-  on the rows, which would widen Model usage and push the logo out of a 99-column window),
-  resets (and a passed reset), status (`warning: close to a limit`, `limit reached`, others),
-  `using usage credits`, tokens and tokens by model, the subtitle
+- Model usage: meters as long as the row leaves them (`Level`: one length, at least `METER_W`, which
+  Model usage measures with, so they take only room to spare), stale data as a faint meter with a
+  muted % and the subtitle in amber (no note on the rows, which would widen Model usage and push the
+  logo out of a 99-column window), resets (and a passed reset), status (`warning: close to a limit`,
+  `limit reached`, others), `using usage credits`, tokens and tokens by model (`Tables`: beside them,
+  at the right end, once both fit `TABLES_GAP` apart; under them otherwise, which Model usage
+  measures with), the subtitle
   `plan data as of HH:MM · X ago · probe|terminal`, placeholders while there is no data.
 - The logo beside Model usage when usage is ≥ 5 rows and leaves room for it: Model usage keeps its
   measured width (rich's Measurement, with no empty grid in it, which rich measures the whole width:
   a plan-data record with no window the panel reads; never clipped for the logo) and the logo takes
-  the rest of the row, square at most, narrower with the drawing shrunk to fit in a panel as tall
+  the rest of the row, square at most for the rows Model usage draws beside it (fewer with its
+  tables side by side), narrower with the drawing shrunk to fit in a panel as tall
   as Model usage, never under the 5-row square (12 columns of drawing); two colours, turning, with
   the `[logo] caption` at its bottom right in faint.
 - The network row (not connected, network-critical, safe; a `?` lead and `connection unknown`); several

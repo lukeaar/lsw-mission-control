@@ -85,6 +85,16 @@ keep. The agent column is at most a third of the panel, cut with `…`: a long n
 or a long label) took the whole row, leaving its times and what it is doing no room (at 80 columns,
 none at all).
 
+Model usage fills a wide window: its plan-limit meters are as long as the row leaves them (24 cells
+at least, all one length, so the shares line up), and the by-model table sits beside the token table,
+at the right end, once both fit (4 columns apart at least), in fewer rows. A wide window left Model
+usage's right half empty. It still measures as drawn with 24-cell meters and the tables stacked, so
+the logo's room is decided as before; the logo, as tall as Model usage, is smaller beside the
+shorter panel (with plan limits, tokens and three models: 7 rows and 16 columns of drawing, side by
+side from 136 columns; at 135 the tables stack, 12 rows, beside a square logo of 26). The reload gate
+compares Model usage drawn at two widths by the words it shows, without the meters, so a longer meter
+or the tables' arrangement is no change, while a row cut short still is.
+
 Fixed before the first release:
 
 - The logo shows in a window under 100 columns wide, and never cuts Model usage short. It was drawn

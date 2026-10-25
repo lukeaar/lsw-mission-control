@@ -11,6 +11,7 @@ from lsw_mission_control import cli, testing
 from lsw_mission_control.config import DEFAULT_LOGO_PATH, LogoCfg, parse_logo_path
 from lsw_mission_control.render.logo import LOGO_FRAMES, LOGO_MIN_COLS, LOGO_PANEL_PAD, LogoAnimator, logo_cells, logo_panel, logo_points
 from lsw_mission_control.render.usage import usage_panel, usage_row
+from lsw_mission_control.render.widgets import METER_W
 
 from conftest import NOW
 from golden_util import check
@@ -99,14 +100,14 @@ def test_model_usage_keeps_its_width_and_the_logo_gets_the_rest(tmp_path, update
             tighter = testing.render_text(usage_panel(f, width), width - (cols + LOGO_PANEL_PAD) - 1 - 1)[0]
             assert "…" in tighter, width
     assert geoms[99] is not None and geoms[99][1] < geoms[99][0] * 2 + 2  # 99 columns: a narrower logo
-    assert geoms[150] == (12, 26)  # room to spare: square, as it always was
+    assert geoms[150] == (7, 16)  # room to spare: square, beside Model usage's tables side by side (7 rows)
     assert geoms[min(w for w, g in geoms.items() if g)][1] == smallest  # it appears at its smallest
     check("usage/row-99.txt", usage_row_at(e, 99)[0], update_golden)
 
 
 def test_logo_beside_a_model_usage_with_no_plan_limit_row(tmp_path):
-    """Model usage here is its token tables (10 rows, under 60 columns): the logo has room for its
-    square at 150, 120 and 99, and for a narrower one at 80. usage_row's Measurement of Model usage
+    """Model usage here is its token tables (10 rows, under 60 columns; 5 side by side, at 150): the
+    logo has room for its square at 150, 120 and 99, and for a narrower one at 80. usage_row's Measurement of Model usage
     was the full width offered (150 at 150, 99 at 99), so the logo was left out at every width (before
     the logo took the room Model usage leaves, it was drawn from 100 columns). Review, 2026-10-04."""
     p = Project(tmp_path)
@@ -119,7 +120,7 @@ def test_logo_beside_a_model_usage_with_no_plan_limit_row(tmp_path):
         e.logo.geom = None
         usage_row(testing.record_console(width), f, width, e.logo)
         geoms[width] = e.logo.geom
-    assert geoms == {150: (10, 22), 120: (10, 22), 99: (10, 22), 80: (10, 17)}
+    assert geoms == {150: (5, 12), 120: (10, 22), 99: (10, 22), 80: (10, 17)}
     # the empty grid usage_panel leaves out drew nothing: Model usage draws exactly as it did with it
     now = usage_panel(e.build_frame(150), 150)
     grid = Table.grid(padding=(0, 1), expand=True)
@@ -129,6 +130,34 @@ def test_logo_beside_a_model_usage_with_no_plan_limit_row(tmp_path):
     was.renderable = Group(grid, *now.renderable.renderables)
     for width in (150, 99, 60):
         assert testing.render_text(now, width) == testing.render_text(was, width), width
+
+
+def test_model_usage_fills_a_wide_row_with_its_tables_side_by_side(tmp_path):
+    """A wide window left Model usage's right half empty (owner, 2026-10-25): its meters were METER_W
+    cells whatever the width, and the by-model table sat under the token table. Drawn wider than it
+    needs, its meters take the room to spare, all one length (the shares line up), and the by-model
+    table goes beside the token table, at the right end, once both fit; narrower, it is as it was.
+    Model usage measures as it did, so the logo's room is decided as before (the sweep above)."""
+    p = Project(tmp_path)
+    midway(p)
+    e = p.engine()
+    beside = {w: any("tokens" in line and "by model" in line for line in usage_row_at(e, w)[0].splitlines())
+              for w in range(60, 201)}
+    first = min(w for w, b in beside.items() if b)
+    assert first == 136 and all(beside[w] for w in range(first, 201))  # beside a square logo, 16 columns
+    f = e.build_frame(150)
+    need = cli.usage_fit(testing.record_console(150), usage_panel(f, 150), 150)[1]
+    for width in (need, 100, 150):
+        lines = testing.render_text(usage_panel(f, width), width)[0].splitlines()
+        limits = [line for line in lines if line.startswith(("│ 5-hour", "│ weekly"))]
+        meters = {line.count("▰") + line.count("▱") for line in limits}
+        assert len(limits) == 2 and len(meters) == 1, width  # one length
+        assert (meters.pop() == METER_W) == (width == need), width  # longer only with room to spare
+        assert max(len(line[:-1].rstrip()) for line in limits) == width - 2, width  # to the padding
+        side = [line for line in lines if "tokens" in line and "by model" in line]
+        assert len(side) == (width == 150), width
+        if side:  # by model ends where the longest limit row does
+            assert side[0][:-1].rstrip().endswith("share · 7 days") and len(side[0][:-1].rstrip()) == width - 2
 
 
 def test_panel_caption_and_colours(update_golden):

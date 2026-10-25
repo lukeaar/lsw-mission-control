@@ -49,7 +49,8 @@ SELF_CHECK_TOKENS = {"5h": (1_200, 350_000, 2_400_000, 41_000_000), "today": (2_
                      "7d": (52_000, 4_900_000, 120_000_000, 2_300_000_000)}
 SELF_CHECK_BY_MODEL = {"Opus": {"5h": 300_000, "today": 520_000, "7d": 4_100_000},
                        "Sonnet": {"5h": 50_000, "today": 90_000, "7d": 700_000}}
-BOX_OR_SPACE = re.compile(r"[\u2500-\u257f\s]")  # box drawing and white space
+BOX = re.compile(r"[\u2500-\u257f]")  # box drawing
+METER = re.compile(r"[▰▱]+")  # a plan limit's meter, as long as its row leaves it (render/usage.py Level)
 
 BOOL_FLAGS = {
     "--once": "print one snapshot and exit",
@@ -108,28 +109,36 @@ def drawn_lines(console, body, width: int) -> list:
     return console.render_lines(body, console.options.update(width=width, height=None), pad=True)
 
 
-def model_usage_content(console, body, width: int) -> list[str] | None:
-    """What Model usage shows when the dashboard is drawn `width` wide: its lines with the borders and
-    spaces taken out (so a row cut short, wrapped or truncated reads differently), from its top border
-    to the end (while the logo is on, the config keeps Model usage last). None when there is none."""
+def shown(lines: list[str]) -> list[str]:
+    """What drawn lines of Model usage show: their words, sorted, with the borders and the meters taken
+    out. A row cut short ("…"), a table squeezed or a subtitle truncated reads differently; a meter
+    drawn longer or shorter, or the by-model table drawn under the token table rather than beside it,
+    does not (the same words, in another order). Its rows are cut short, never wrapped."""
+    return sorted(w for line in lines for w in BOX.sub(" ", line).split() if not METER.fullmatch(w))
+
+
+def model_usage_lines(console, body, width: int) -> list[str] | None:
+    """Model usage's lines when the dashboard is drawn `width` wide, from its top border to the end
+    (while the logo is on, the config keeps Model usage last). None when there is none."""
     lines = ["".join(seg.text for seg in line) for line in drawn_lines(console, body, width)]
     tops = [i for i, line in enumerate(lines) if line.startswith("╭") and " Model usage " in line]
-    return [BOX_OR_SPACE.sub("", line) for line in lines[tops[-1]:]] if tops else None
+    return lines[tops[-1]:] if tops else None
 
 
 def usage_fit(console, usage, width: int) -> tuple[int, int]:
     """(Model usage's rows, the narrowest width it is drawn whole at), for the panel `usage` alone:
-    from that width up to `width` it shows exactly what it shows `width` wide, its borders and spaces
-    taken out, so a row cut short or a subtitle truncated reads differently. Found by drawing, never
-    by the rule that places the logo (render/usage.py measures with rich's Measurement)."""
-    def content(w: int) -> list[str]:
-        return [BOX_OR_SPACE.sub("", "".join(seg.text for seg in line))
+    from that width up to `width` it shows exactly what it shows `width` wide (`shown`), so a row cut
+    short or a subtitle truncated reads differently. Found by drawing, never by the rule that places
+    the logo (render/usage.py measures with rich's Measurement)."""
+    def drawn(w: int) -> list[str]:
+        return ["".join(seg.text for seg in line)
                 for line in console.render_lines(usage, console.options.update(width=w, height=None))]
-    whole = content(width)
+    lines = drawn(width)
+    whole = shown(lines)
     need = width
-    while need > 1 and content(need - 1) == whole:
+    while need > 1 and shown(drawn(need - 1)) == whole:
         need -= 1
-    return len(whole) - 2, need
+    return len(lines) - 2, need
 
 
 def logo_left_out_with_room(console, body, width: int) -> bool:
@@ -140,10 +149,11 @@ def logo_left_out_with_room(console, body, width: int) -> bool:
     for it, as the fixed 100-column cut-off did at 99, is caught."""
     from lsw_mission_control.render.logo import LOGO_MIN_COLS, LOGO_MIN_ROWS, LOGO_PANEL_PAD
 
-    whole = model_usage_content(console, body, width)
+    whole = model_usage_lines(console, body, width)
     if whole is None or len(whole) - 2 < LOGO_MIN_ROWS:
         return False
-    return model_usage_content(console, body, width - (LOGO_MIN_COLS + LOGO_PANEL_PAD) - 1) == whole
+    narrower = model_usage_lines(console, body, width - (LOGO_MIN_COLS + LOGO_PANEL_PAD) - 1)
+    return narrower is not None and shown(narrower) == shown(whole)
 
 
 def cells_at(lines: list, top: int, x: int, rows: int, cols: int) -> list[str] | None:

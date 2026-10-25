@@ -1,5 +1,5 @@
 ╭─  Model usage  ──────────────────────────────────────────────────────────────────────────────────╮
-│ weekly       ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  100%   resets 15:13 · in 1h00                             │
+│ weekly       ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  100%   resets 15:13 · in 1h00 │
 │ status       limit reached  ·  using usage credits                                               │
 │                                                                                                  │
 │ tokens        output  input  cache writes  cache reads                                           │
