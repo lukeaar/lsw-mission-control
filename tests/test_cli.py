@@ -29,7 +29,7 @@ def test_check_net_contract(tmp_path):
     p = Project(tmp_path)
     r = lswmc("--project", str(p.root), "--check-net")
     assert r.returncode == 0, r.stderr
-    assert r.stdout == "28/28 network cases correct\n22/22 indicator cases correct\n39/39 connection cases correct\n"
+    assert r.stdout == "30/30 network cases correct\n22/22 indicator cases correct\n39/39 connection cases correct\n"
 
 
 def test_check_net_with_project_cases(tmp_path):
@@ -48,7 +48,7 @@ def test_check_net_with_project_cases(tmp_path):
         """)
     r = lswmc("--config", str(p.dot / "mission-control.toml"), "--check-net")
     assert r.returncode == 1
-    assert "MISMATCH want='othertool' got=None: othertool --sync" in r.stdout and "29/30 network cases correct" in r.stdout
+    assert "MISMATCH want='othertool' got=None: othertool --sync" in r.stdout and "31/32 network cases correct" in r.stdout
 
 
 def test_self_check_renders_and_writes_nothing(tmp_path):
@@ -399,7 +399,7 @@ def test_check_net_fails_on_a_broken_plugin_or_config(tmp_path):
         class = "StubPlugin"
         """)
     r = lswmc("--project", str(p.root), "--check-net")
-    assert r.returncode == 1 and "28/28 network cases correct" in r.stdout
+    assert r.returncode == 1 and "30/30 network cases correct" in r.stdout
     assert r.stderr.strip().splitlines()[-1] == "plugin stub not loaded: ConfigError: [plugins.options].host is missing (plugin stub)"
     (p.dot / "mission-control.toml").write_text("schema = 1\n[bogus]\n")
     r = lswmc("--project", str(p.root), "--check-net")

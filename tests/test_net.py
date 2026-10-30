@@ -34,14 +34,14 @@ def test_check_net_prints_the_contract():
     assert lines == [f"{len(NET_CASES)}/{len(NET_CASES)} network cases correct",
                      f"{len(FLAG_CASES)}/{len(FLAG_CASES)} indicator cases correct",
                      "39/39 connection cases correct"]
-    assert len(NET_CASES) == 28 and len(FLAG_CASES) == 22
+    assert len(NET_CASES) == 30 and len(FLAG_CASES) == 22
 
 
 def test_check_net_reports_a_mismatch():
     lines = []
     assert check_net_cases(extra_cases=[("hg push", "hg push")], out=lines.append) == 1
     assert lines[0] == "MISMATCH want='hg push' got=None: hg push"
-    assert lines[1] == "28/29 network cases correct"
+    assert lines[1] == "30/31 network cases correct"
 
 
 def test_project_extras():

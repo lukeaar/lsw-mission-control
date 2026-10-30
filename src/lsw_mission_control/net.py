@@ -44,7 +44,7 @@ NET_TOOLS = frozenset({"ssh", "scp", "sftp", "curl", "wget", "gh", "pip-audit", 
 NET_SUBCOMMANDS: dict[str, frozenset] = {
     "git": frozenset({"push", "fetch", "pull", "clone", "ls-remote", "submodule"}),
     "docker": frozenset({"push", "pull", "login", "build", "buildx"}),  # a build pulls base images and packages
-    "npm": frozenset({"install", "ci", "audit", "i", "update"}),
+    "npm": frozenset({"install", "ci", "audit", "i", "update", "view", "v", "info", "show", "outdated", "search"}),
     "pip": frozenset({"install", "download"}),
     "pip3": frozenset({"install", "download"}),
     "brew": frozenset({"install", "upgrade", "update", "fetch"}),
@@ -151,6 +151,8 @@ NET_CASES = [
     ("docker compose -f docker-compose.release.yml build backend", "docker compose build"),
     ("docker images", None),
     ("npm install", "npm install"),
+    ("npm view react version", "npm view"),
+    ("npm outdated --json", "npm outdated"),
     ("npm run test", None),
     (".../Python.app/Contents/MacOS/Python -m pytest -q", None),
     (".../Python.app/Contents/MacOS/Python /Users/x/project/.claude/status.py", None),

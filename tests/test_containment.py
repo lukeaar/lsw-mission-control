@@ -134,7 +134,7 @@ def test_a_plugin_card_failure_stays_in_its_card_and_fails_the_gate(tmp_path, fa
     assert "Repository" in plain and "Release 1.4.0" in plain and not e.last_error
     assert e.errors_for_once()
     r = lswmc("--project", str(p.root), "--check-net", "--self-check")
-    assert r.returncode == 1 and "28/28 network cases correct" in r.stdout, r.stderr
+    assert r.returncode == 1 and "30/30 network cases correct" in r.stdout, r.stderr
 
 
 def test_a_live_job_that_is_not_a_number_is_a_plugin_error(tmp_path):
