@@ -113,7 +113,7 @@ Nov`). It draws with no plan data too.
 Fixed before the first release:
 
 - An Agent SDK session that ended its turn reads as done. Claude Code appends bookkeeping records after a
-  session's last turn (`ai-title`, `atis-latch`, `cost-state`), and read as its last record they hid the turn's
+  session's last turn (`last-prompt`, `ai-title`, `atis-latch`, `cost-state`), and read as its last record they hid the turn's
   end: a finished pass in `[agents] extra_dirs` read as running until it fell silent.
 
 - A plan-limit window sent with no share (`used_percentage` null, missing or not a number, as a plan

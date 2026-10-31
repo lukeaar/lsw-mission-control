@@ -716,7 +716,7 @@ def test_agents_at_work_lists_a_jobs_own_agents_from_extra_dirs(tmp_path):
 
 def test_an_agent_sdk_pass_that_ended_its_turn_is_done_despite_the_bookkeeping_after_it(tmp_path):
     """An Agent SDK session's transcript ends with records that carry no message after the model's last
-    turn (ai-title, atis-latch, cost-state: measured on a finished pass, 31 Oct): read as its last record,
+    turn (last-prompt, ai-title, atis-latch, cost-state: measured on 16 finished passes, 31 Oct): read as its last record,
     they hid the turn's end, and the pass read running until silent_stopped_min."""
     from lsw_mission_control.agents import scan_session_agents
 
@@ -724,8 +724,10 @@ def test_an_agent_sdk_pass_that_ended_its_turn_is_done_despite_the_bookkeeping_a
     midway(p)
     path = p.session_agent("API: backend-tests-1", returned=True, agent_id="asdk", quiet_s=60)
     with open(path, "a") as fh:
-        for rec in ({"type": "ai-title", "aiTitle": "Review backend tests", "sessionId": "s"},
+        for rec in ({"type": "last-prompt", "lastPrompt": "Review", "leafUuid": "u"},
+                    {"type": "ai-title", "aiTitle": "Review backend tests", "sessionId": "s"},
                     {"type": "atis-latch", "atis": 1, "sessionId": "s"},
+                    {"type": "last-prompt", "lastPrompt": "Review", "leafUuid": "u"},
                     {"type": "cost-state", "sessionId": "s", "totalCostUSD": 4.2}):
             fh.write(json.dumps(rec) + "\n")
     (a,) = [a for a in scan_session_agents(p.projects, NOW) if a["id"] == "asdk"]
