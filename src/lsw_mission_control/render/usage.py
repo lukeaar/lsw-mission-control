@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import glob
 import json
 import math
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.console import Console, Group
@@ -17,9 +20,11 @@ from lsw_mission_control.theme import C
 from lsw_mission_control.util import clock, count, human, now, num
 
 if TYPE_CHECKING:
+    from lsw_mission_control.config import CreditsCfg
     from lsw_mission_control.engine import Frame
 
 TABLES_GAP = 4  # the least room between the token table and the by-model table beside it
+MAX_SPEND_FILES = 5000  # per glob: a runaway glob never stalls a frame
 
 
 def share(window: dict) -> float | None:
@@ -85,6 +90,40 @@ class Tables:
         yield self.stacked()
 
 
+def credit_spend(globs) -> float:
+    """What the spend files record: the sum of their `total_cost_usd` (a file read once however many globs
+    match it; one that is not a JSON object with that field counts nothing)."""
+    total, seen = 0.0, set()
+    for pattern in globs:
+        for name in sorted(glob.glob(pattern))[:MAX_SPEND_FILES]:
+            if name in seen:
+                continue
+            seen.add(name)
+            try:
+                d = json.loads(Path(name).read_text())
+            except (OSError, ValueError):
+                continue
+            if isinstance(d, dict):
+                total += num(d.get("total_cost_usd"))
+    return total
+
+
+def credits_level(cr: CreditsCfg, t_now: float) -> Level:
+    """The credits' row: the share of the balance the spend files record, the dollars, and the day the
+    credits expire. Its colours are the plan limits' (green under 50%, amber under 80%, red from there)."""
+    spent = credit_spend(cr.spend)
+    pct = 100 * spent / cr.usd
+    col = C.GREEN if pct < 50 else C.AMBER if pct < 80 else C.RED
+    tail = Text()
+    tail.append(f"  {pct:3.0f}%", style=f"bold {col}")
+    tail.append(f"   ${spent:,.2f} of ${cr.usd:,.0f}", style=C.MUTED)
+    if cr.until:
+        day = dt.date.fromisoformat(cr.until)
+        word = "until" if day >= dt.date.fromtimestamp(t_now) else "expired"
+        tail.append(f" · {word} {day.day} {day.strftime('%b')}", style=C.MUTED)
+    return Level(min(pct / 100, 1.0), col, tail)
+
+
 def usage_panel(f: Frame, width: int):
     """Plan limits (5-hour, weekly) with their resets, and tokens used, under Agents at work."""
     g = Table.grid(padding=(0, 1), expand=True)
@@ -98,11 +137,11 @@ def usage_panel(f: Frame, width: int):
         usage = None
     t_now = now()
     stale_after = (f.cfg.usage.probe_every_min + 5) * 60
+    levels = []
     if usage:
         at = num(usage.get("at"))
         stale = t_now - at > stale_after
         limits = usage.get("rate_limits") if isinstance(usage.get("rate_limits"), dict) else {}
-        levels = []
         for key, label in (("five_hour", "5-hour"), ("seven_day", "weekly")):
             w = limits.get(key)
             pct = share(w) if isinstance(w, dict) else None
@@ -124,9 +163,15 @@ def usage_panel(f: Frame, width: int):
                 tail.append(f"   resets {clock(resets)} · in {human(resets - t_now)}", style=C.MUTED)
             levels.append(Level(pct / 100, C.FAINT if stale else col, tail))
             g.add_row(label, levels[-1])
-        widest = max((lv.tail_w for lv in levels), default=0)
-        for lv in levels:
-            lv.tail_w = widest
+    else:
+        g.add_row("plan", Text("limits: no data yet", style=C.FAINT))
+    if f.cfg.usage.credits is not None:  # a prepaid balance, under the plan limits it is no part of
+        levels.append(credits_level(f.cfg.usage.credits, t_now))
+        g.add_row(f.cfg.usage.credits.label, levels[-1])
+    widest = max((lv.tail_w for lv in levels), default=0)
+    for lv in levels:
+        lv.tail_w = widest
+    if usage:
         status = str(usage.get("status") or "")
         if status and status != "allowed" or usage.get("overage"):
             note = Text()
@@ -139,8 +184,6 @@ def usage_panel(f: Frame, width: int):
             if usage.get("overage"):
                 note.append(("  ·  " if note.plain else "") + "using usage credits", style=C.AMBER)
             g.add_row("status", note)
-    else:
-        g.add_row("plan", Text("limits: no data yet", style=C.FAINT))
     tokens = f.store.get("tokens")
     by_model = f.store.get("tokens_by_model")
     t = Table(box=None, show_header=True, header_style=f"bold {C.FAINT}", pad_edge=False, padding=(0, 1))

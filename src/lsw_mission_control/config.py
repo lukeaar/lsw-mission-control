@@ -7,6 +7,7 @@ secrets: authentication comes from ~/.ssh/config, the ssh agent and gh's own key
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 import re
 import tomllib
@@ -105,11 +106,23 @@ class TestLogsCfg:
 
 
 @dataclass(frozen=True)
+class CreditsCfg:
+    """A prepaid credit balance shown under the plan limits ([usage.credits]): what the project's own jobs
+    record spending (each spend file a JSON object with `total_cost_usd`, as the Agent SDK's result and
+    `claude -p --output-format json` write) against the balance it started with."""
+    usd: float
+    label: str = "API"
+    until: str = ""  # the day the credits expire, YYYY-MM-DD ("" when they do not)
+    spend: tuple[str, ...] = ()  # globs of the spend files, ~ expanded, relative ones from the config's folder
+
+
+@dataclass(frozen=True)
 class UsageCfg:
     probe: bool = True
     probe_every_min: float = 20
     probe_fresh_min: float = 15
     probe_model: str = "haiku"
+    credits: CreditsCfg | None = None
 
 
 @dataclass(frozen=True)
@@ -414,9 +427,29 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
     if test_logs.max_age_h <= 0:
         raise ConfigError("[test_logs].max_age_h must be more than 0")
 
-    u = _table(raw, "usage", {"probe", "probe_every_min", "probe_fresh_min", "probe_model"})
+    u = _table(raw, "usage", {"probe", "probe_every_min", "probe_fresh_min", "probe_model", "credits"})
+    credits = None
+    if "credits" in u:
+        c = _table({"usage.credits": u["credits"]}, "usage.credits", {"usd", "label", "until", "spend"})
+        if "usd" not in c:
+            raise ConfigError("[usage.credits].usd is missing (the balance the credits started with)")
+        usd = float(_get(c, "[usage.credits]", "usd", (int, float), 0))
+        if usd <= 0:
+            raise ConfigError("[usage.credits].usd must be more than 0")
+        until = _get(c, "[usage.credits]", "until", str, "")
+        if until:
+            try:
+                dt.date.fromisoformat(until)
+            except ValueError:
+                raise ConfigError(f"[usage.credits].until must be a day like 2026-11-27, not {until!r}") from None
+        label = _get(c, "[usage.credits]", "label", str, "API")
+        if not label.strip() or len(label) > 12:
+            raise ConfigError("[usage.credits].label must be 1 to 12 characters (the rows' label column)")
+        spend = tuple(str(_path(base, g)) for g in _strs(c, "[usage.credits]", "spend", ()))
+        credits = CreditsCfg(usd, label, until, spend)
     usage = UsageCfg(_get(u, "[usage]", "probe", bool, True), float(_get(u, "[usage]", "probe_every_min", (int, float), 20)),
-                     float(_get(u, "[usage]", "probe_fresh_min", (int, float), 15)), _get(u, "[usage]", "probe_model", str, "haiku"))
+                     float(_get(u, "[usage]", "probe_fresh_min", (int, float), 15)), _get(u, "[usage]", "probe_model", str, "haiku"),
+                     credits)
     _at_least(usage.probe_every_min, "[usage].probe_every_min", 5, " (each probe starts a Claude CLI)")
     _at_least(usage.probe_fresh_min, "[usage].probe_fresh_min", 0)
 

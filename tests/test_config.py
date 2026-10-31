@@ -94,6 +94,12 @@ def test_cache_dir_overrides(tmp_path, monkeypatch):
     ("schema = 1\n[release]\nfallback_minutes = 10\n", "fallback_minutes must be at least hands_minutes + release_run"),
     ("schema = 1\n[release.final_merge]\nstages = [['build', -30]]\n", "minutes must be at least 0"),
     ("schema = 1\n[usage]\nprobe_every_min = 0\n", "[usage].probe_every_min must be at least 5"),
+    ("schema = 1\n[usage.credits]\nlabel = 'API'\n", "[usage.credits].usd is missing"),
+    ("schema = 1\n[usage.credits]\nusd = 0\n", "[usage.credits].usd must be more than 0"),
+    ("schema = 1\n[usage.credits]\nusd = 200\nuntil = '27 Nov'\n", "[usage.credits].until must be a day like 2026-11-27"),
+    ("schema = 1\n[usage.credits]\nusd = 200\nlabel = 'promotional credits'\n", "[usage.credits].label must be 1 to 12"),
+    ("schema = 1\n[usage.credits]\nusd = 200\ncap = 5\n", "unknown key [usage.credits].cap"),
+    ("schema = 1\n[usage.credits]\nusd = 200\nspend = 'x/*.json'\n", "[usage.credits].spend must be a list"),
     ("schema = 1\n[test_logs]\nlimit = -1\n", "[test_logs].limit must be at least 0"),
     ("schema = 1\n[test_logs]\nmax_age_h = 0\n", "[test_logs].max_age_h must be more than 0"),
     ("schema = 1\n[logo]\nviewbox = 0\n", "[logo].viewbox must be more than 0"),
@@ -179,3 +185,13 @@ def test_find_config(tmp_path):
     assert find_config(launcher=str(tmp_path / ".claude" / "status.py")) == tmp_path / ".claude" / "mission-control.toml"
     assert find_config(project=str(tmp_path)) == tmp_path / ".claude" / "mission-control.toml"
     assert find_config(cwd=tmp_path) == tmp_path / ".claude" / "mission-control.toml"
+
+
+def test_usage_credits(tmp_path):
+    cfg = load_config(write(tmp_path, "schema = 1\n[usage.credits]\nusd = 200\nuntil = '2026-11-27'\n"
+                                      "spend = ['~/jobs/*/results/*.json', 'results/*.json']\n"))
+    cr = cfg.usage.credits
+    assert (cr.usd, cr.label, cr.until) == (200.0, "API", "2026-11-27")
+    assert cr.spend[0].endswith("/jobs/*/results/*.json") and not cr.spend[0].startswith("~")
+    assert cr.spend[1] == str((tmp_path / "proj" / ".claude").resolve() / "results" / "*.json")  # from the config's folder
+    assert load_config(write(tmp_path, "schema = 1\n")).usage.credits is None

@@ -58,6 +58,9 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[usage] probe` | bool | `true` | the plan-limit probe (the CLI flag `--no-usage-probe` also stops it) |
 | `[usage] probe_every_min` / `probe_fresh_min` | num | `20` / `15` | its period (at least 5), and the age below which a round is skipped; data older than `every + 5` min shows as stale |
 | `[usage] probe_model` | str | `"haiku"` | |
+| `[usage.credits] usd` | num | none (no row) | a prepaid balance shown under the plan limits, e.g. the Console's API credits, which the plan limits never see: its row ("API") reads the share of `usd` the spend files record |
+| `[usage.credits] spend` | [str] | `[]` | globs of the spend files (`~` expanded, relative ones from the config's folder): each a JSON object whose `total_cost_usd` counts (the Agent SDK's result, `claude -p --output-format json`) |
+| `[usage.credits] until` / `label` | str | `""` / `"API"` | the day the credits expire (`2026-11-27`: the row reads `until 27 Nov`, then `expired`); the row's label (up to 12 characters) |
 | `[network] tools` | [str] | `[]` | added to the engine's network tools |
 | `[network.subcommands]` | {tool: [str]} | `{}` | merged into the engine's (`hg = ["pull", "push"]`) |
 | `[[network.cases]]` | `{command, label}` | none | real process lines and their labels (`label = ""`: not network); `--check-net` checks them too |

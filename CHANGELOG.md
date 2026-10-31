@@ -99,6 +99,12 @@ Agents at work fills a wide row: the item an agent is for took 36 columns whatev
 wide window cut every name with `…` and left the end of the row empty. What it is doing keeps its whole
 text where it fits, and the item takes the rest of the row, up to its whole name (never under 36).
 
+Model usage can show a prepaid balance under the plan limits (`[usage.credits]`: the Console's API credits,
+say, which the plan limits never see): a row like `weekly`, labelled `API`, whose meter is the share of the
+balance the project's own spend files record (`total_cost_usd`, as the Agent SDK's result and `claude -p
+--output-format json` write it), with the dollars and the day the credits expire (`$3.75 of $200 · until 27
+Nov`). It draws with no plan data too.
+
 Fixed before the first release:
 
 - A plan-limit window sent with no share (`used_percentage` null, missing or not a number, as a plan

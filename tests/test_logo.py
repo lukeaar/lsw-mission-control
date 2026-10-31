@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
+import json
 import math
 
 import pytest
@@ -245,6 +247,40 @@ def test_a_window_with_no_share_draws_no_row(tmp_path, shape):
     assert not [line for line in lines if line.startswith("│ 5-hour")]
     weekly = [line for line in lines if line.startswith("│ weekly")]
     assert len(weekly) == 1 and " 81%" in weekly[0] and "resets" in weekly[0]
+
+
+def test_the_credits_row_counts_the_spend_files_against_the_balance(tmp_path):
+    """[usage.credits]: a prepaid balance the plan limits never see (the Console's API credits), drawn right
+    under them and like them: the share of the balance its spend files record, the dollars, and the day it
+    expires. A file that is not a JSON object with total_cost_usd counts nothing; one two globs match, once.
+    With no plan data the row still draws, under "limits: no data yet"; past its day it reads "expired"."""
+    spend = tmp_path / "spend"
+    spend.mkdir()
+    for name, body in (("a.json", {"total_cost_usd": 1.5}), ("b.json", {"total_cost_usd": 2.25, "result": "{}"}),
+                       ("c.json", [1, 2]), ("d.json", {"is_error": True})):
+        (spend / name).write_text(json.dumps(body))
+    (spend / "e.json").write_text("not json")
+    p = Project(tmp_path)
+
+    def lines(until: str) -> list[str]:
+        p.write_config(f'[usage.credits]\nusd = 200\nuntil = "{until}"\nspend = ["{spend}/*.json", "{spend}/a.json"]\n')
+        return testing.render_text(usage_panel(p.engine().build_frame(150), 150), 150)[0].splitlines()
+
+    midway(p)
+    p.usage(PLAN_DATA["fresh"])
+    day = dt.date.fromtimestamp(NOW) + dt.timedelta(days=26)
+    rows = lines(day.isoformat())
+    names = [line[2:9].rstrip() for line in rows if line.startswith("│ ") and line[2:9].strip()]
+    api = [line for line in rows if line.startswith("│ API")]
+    assert names.index("API") == names.index("weekly") + 1
+    assert len(api) == 1 and "  2%" in api[0] and f"$3.75 of $200 · until {day.day} {day.strftime('%b')}" in api[0]
+    meters = {line.count("▰") + line.count("▱") for line in rows if line.startswith(("│ API", "│ weekly", "│ 5-hour"))}
+    assert len(meters) == 1  # one length with the plan limits'
+    p.usage(None)
+    past = dt.date.fromtimestamp(NOW) - dt.timedelta(days=1)
+    rows = lines(past.isoformat())
+    assert any(line.startswith("│ plan") and "no data yet" in line for line in rows)
+    assert any(line.startswith("│ API") and f"expired {past.day} {past.strftime('%b')}" in line for line in rows)
 
 
 def test_stale_plan_data_keeps_model_usage_as_wide_as_fresh_and_says_so_in_amber(tmp_path):
