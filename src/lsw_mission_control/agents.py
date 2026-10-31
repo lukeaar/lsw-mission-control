@@ -48,6 +48,10 @@ TAIL_BYTES = 200_000
 TURN_ENDED = ("end_turn",)
 # The tool a background agent hands its report back to its caller with.
 HANDBACK = "SubagentHandback"
+# What Claude Code appends after a session's last turn (measured on a finished Agent SDK pass, 31 Oct): read as
+# the last record it hid the turn's end, and the pass read as running until it fell silent. Only these: an
+# attachment after a turn is a resumed agent's next prompt.
+SESSION_BOOKKEEPING = frozenset({"ai-title", "atis-latch", "cost-state"})
 
 
 def _ends_turn(rec: dict | None) -> bool:
@@ -126,7 +130,7 @@ def transcript_facts(path: Path, cache: dict | None = None) -> tuple[float | Non
                 continue
             if not isinstance(rec, dict):
                 continue  # valid JSON but not a record ("x", 3, []): nothing to read
-            if last is None:
+            if last is None and rec.get("type") not in SESSION_BOOKKEEPING:
                 last = rec
             if t1 is None and rec.get("timestamp"):
                 try:

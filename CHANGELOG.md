@@ -112,6 +112,10 @@ Nov`). It draws with no plan data too.
 
 Fixed before the first release:
 
+- An Agent SDK session that ended its turn reads as done. Claude Code appends bookkeeping records after a
+  session's last turn (`ai-title`, `atis-latch`, `cost-state`), and read as its last record they hid the turn's
+  end: a finished pass in `[agents] extra_dirs` read as running until it fell silent.
+
 - A plan-limit window sent with no share (`used_percentage` null, missing or not a number, as a plan
   with no 5-hour window may send it) draws no row, as a window not sent at all. Model usage drew
   `5-hour 0%` with no reset, an unused limit that does not exist (or `?% reset … no data since` once
