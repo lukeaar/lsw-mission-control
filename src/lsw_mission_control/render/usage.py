@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import TYPE_CHECKING
 
 from rich.console import Console, Group
@@ -19,6 +20,19 @@ if TYPE_CHECKING:
     from lsw_mission_control.engine import Frame
 
 TABLES_GAP = 4  # the least room between the token table and the by-model table beside it
+
+
+def share(window: dict) -> float | None:
+    """A plan window's used share in percent, or None when it carries none: a plan without that
+    window may send it with `used_percentage` null or missing, which num() read as 0%."""
+    x = window.get("used_percentage")
+    if isinstance(x, bool):
+        return None
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) else None
 
 
 class Level:
@@ -91,9 +105,9 @@ def usage_panel(f: Frame, width: int):
         levels = []
         for key, label in (("five_hour", "5-hour"), ("seven_day", "weekly")):
             w = limits.get(key)
-            if not isinstance(w, dict):
-                continue
-            pct = num(w.get("used_percentage"))
+            pct = share(w) if isinstance(w, dict) else None
+            if pct is None:
+                continue  # no window, or one with no share (a plan without it may send it empty): no row, not 0%
             resets = num(w.get("resets_at"))
             if resets and resets <= t_now:
                 # The window reset after the last plan data: its use since then is unknown.

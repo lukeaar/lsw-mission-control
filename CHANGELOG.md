@@ -101,6 +101,11 @@ text where it fits, and the item takes the rest of the row, up to its whole name
 
 Fixed before the first release:
 
+- A plan-limit window sent with no share (`used_percentage` null, missing or not a number, as a plan
+  with no 5-hour window may send it) draws no row, as a window not sent at all. Model usage drew
+  `5-hour 0%` with no reset, an unused limit that does not exist (or `?% reset … no data since` once
+  its reset had passed). The status line and the probe already left such a window out.
+
 - The logo shows in a window under 100 columns wide, and never cuts Model usage short. It was drawn
   only from 100 columns, whatever Model usage held: a 99-column window had no logo at all, and at 100
   the weekly row lost its end (`resets Thu 14:13 ·…`). Model usage now keeps the width its rows

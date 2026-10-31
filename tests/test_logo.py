@@ -202,6 +202,9 @@ PLAN_DATA = {
     "warning-credits": {"at": NOW - MIN, "rate_limits": LIMITS, "status": "allowed_warning", "overage": True},
     "rejected-credits": {"at": NOW - MIN, "rate_limits": LIMITS, "status": "rejected", "overage": True},
     "unreadable": UNREADABLE,
+    # a plan without a 5-hour window may send it with no share: it drew "5-hour 0%" with no reset
+    "five-hour-without-a-share": {"at": NOW - 3 * MIN, "rate_limits": {
+        "five_hour": {"used_percentage": None, "resets_at": None}, "seven_day": LIMITS["seven_day"]}, "source": "probe"},
 }
 
 
@@ -220,6 +223,28 @@ def test_the_logo_shows_at_99_columns_whatever_the_plan_data_says(tmp_path, stat
     assert geom is not None and geom[1] >= LOGO_MIN_COLS, geom
     assert "…" not in plain and "as of" not in plain.split("╰")[0]  # no row carries the age
     assert not cli.logo_left_out_with_room(testing.record_console(99), row, 99)
+
+
+NO_SHARE = {"null": {"used_percentage": None, "resets_at": None}, "missing": {"resets_at": NOW + HOUR},
+            "reset-passed": {"used_percentage": None, "resets_at": NOW - HOUR}, "bool": {"used_percentage": True},
+            "text": {"used_percentage": "n/a"}, "nan": {"used_percentage": math.nan}}
+
+
+@pytest.mark.parametrize("shape", sorted(NO_SHARE))
+def test_a_window_with_no_share_draws_no_row(tmp_path, shape):
+    """A plan with no 5-hour window may still send the window with no share in it: num() read that
+    as 0, and Model usage drew "5-hour 0%", an unused limit
+    that does not exist (or "?% reset … no data since" once its reset had passed). Such a window
+    draws no row, as a window that is not sent at all; the weekly row is drawn as ever."""
+    p = Project(tmp_path)
+    midway(p)
+    p.usage({"at": NOW - 3 * MIN, "rate_limits": {"five_hour": NO_SHARE[shape], "seven_day": LIMITS["seven_day"]},
+             "source": "probe"})
+    f = p.engine().build_frame(150)
+    lines = testing.render_text(usage_panel(f, 150), 150)[0].splitlines()
+    assert not [line for line in lines if line.startswith("│ 5-hour")]
+    weekly = [line for line in lines if line.startswith("│ weekly")]
+    assert len(weekly) == 1 and " 81%" in weekly[0] and "resets" in weekly[0]
 
 
 def test_stale_plan_data_keeps_model_usage_as_wide_as_fresh_and_says_so_in_amber(tmp_path):
