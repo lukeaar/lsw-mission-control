@@ -244,7 +244,7 @@ class Engine:
         f = Frame(now=t, width=width, cfg=cfg, plan=plan, plan_note=self.plans.note, reload_note=self.reload_note,
                   notes=self.notes.refresh(), agents=agents, labels=labels, names=names, cal=self.cal,
                   store=self.store.snapshot(), flags=self.flags, notes_note=self.notes.note,
-                  session_agents=scan_session_agents(cfg.projects_dir, t, window, skip={a["id"] for a in scanned}))
+                  session_agents=self.session_agents(t, window, {a["id"] for a in scanned}))
         src = self._live_job_plugin()
         if src is not None:
             job, err = self._plugin_call(f, src, "live_job", f, check=check_live_job)
@@ -252,6 +252,15 @@ class Engine:
         if f.live_job is None and f.live_job_error is None:
             f.live_job_error = self._live_job_load_error()
         return f
+
+    def session_agents(self, t: float, window: float, skip: set) -> list[dict]:
+        """The agents sessions launched themselves (agents.scan_session_agents()), then those in each of
+        [agents].extra_dirs: a job's own agents outside Claude Code (the Agent SDK on the API), which it
+        lays out as Claude Code does a session's."""
+        found = scan_session_agents(self.cfg.projects_dir, t, window, skip=skip)
+        for d in self.cfg.agents.extra_dirs:
+            found += scan_session_agents(Path(d), t, window, skip=skip)
+        return found
 
     def side_cards(self, f: Frame, width: int) -> list[tuple[str, SideCard]]:
         """[(whose card: a plugin's name, or "Repository"), the card]."""

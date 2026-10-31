@@ -53,6 +53,7 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[agents] silent_stopped_min` | num | `25` | a running agent silent longer than this has stopped (one whose run the Workflow runtime recorded as ended, stopped then, reads stopped at once) |
 | `[agents] idle_amber_min` / `idle_red_min` | num | `20` / `55` | the "active" column's colours |
 | `[agents] rows` | int | `14` | more running agents than this: the quiet ones first, then `+N more` (at least 1) |
+| `[agents] extra_dirs` | [str] | `[]` | more folders laid out as a projects folder (`<run>/subagents/agent-<id>.jsonl` beside `agent-<id>.meta.json`, `{"agentType", "description"}`): agents a job launches outside Claude Code, such as Agent SDK passes billed to the API, listed in Agents at work with a session's own |
 | `[test_logs] globs` | [str] | `["{scratch}/*/scratchpad/*.log"]` | `{scratch}` and `{root}` are filled in (no other `{…}`) |
 | `[test_logs] max_age_h` / `limit` | num / int | `2` / `4` | |
 | `[usage] probe` | bool | `true` | the plan-limit probe (the CLI flag `--no-usage-probe` also stops it) |

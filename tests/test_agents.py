@@ -692,6 +692,28 @@ def test_agents_at_work_lists_a_sessions_own_agents_beside_the_workflows(tmp_pat
     assert "fix:export" in text and "Find why the export test flakes" in text and "6 running" in text
 
 
+def test_agents_at_work_lists_a_jobs_own_agents_from_extra_dirs(tmp_path):
+    """[agents].extra_dirs: the agents a job launches outside Claude Code (Agent SDK passes billed to the
+    API), laid out as Claude Code lays out a session's, are listed with a session's own: by their
+    description, "for" their agent type; one that returned is not at work. A folder that does not exist
+    reads as empty."""
+    p = Project(tmp_path)
+    midway(p)
+    extra = tmp_path / "api-agents"
+    projects, p.projects = p.projects, extra
+    p.session_agent("API: backend-services-1", agent_type="Code quality pre-pass (API credits)", start_ago=4 * MIN,
+                    quiet_s=10, action="Read · /x/app/services/library.py", session="quality-080")
+    p.session_agent("API: backend-api-core", agent_type="Code quality pre-pass (API credits)", returned=True,
+                    session="quality-080")
+    p.projects = projects
+    none = tmp_path / "none"
+    p.write_config(f'[agents]\nextra_dirs = ["{extra}", "{none}"]\n')
+    text = agents_text(p)
+    row = next(line for line in text.splitlines() if "API: backend-services-1" in line)
+    assert "Code quality pre-pass (API credits)" in row and "4m" in row and "10s ago" in row and "Read" in row
+    assert "API: backend-api-core" not in text
+
+
 def test_a_background_agent_that_handed_its_report_back_is_not_at_work(tmp_path):
     """Claude Code 2.1.286 and later end a background agent's transcript with its handback's result and
     no turn ended after it (measured on 2.1.286 and 2.1.289, both of them reported completed to their

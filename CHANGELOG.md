@@ -99,6 +99,11 @@ Agents at work fills a wide row: the item an agent is for took 36 columns whatev
 wide window cut every name with `…` and left the end of the row empty. What it is doing keeps its whole
 text where it fits, and the item takes the rest of the row, up to its whole name (never under 36).
 
+Agents at work can list agents a job launches outside Claude Code (`[agents] extra_dirs`), such as Agent SDK
+passes billed to the API: each folder is laid out as Claude Code lays out a session's own agents (a transcript
+beside a meta file naming its description and agent type), and its agents are listed with a session's, at
+work until they return or fall silent.
+
 Model usage can show a prepaid balance under the plan limits (`[usage.credits]`: the Console's API credits,
 say, which the plan limits never see): a row like `weekly`, labelled `API`, whose meter is the share of the
 balance the project's own spend files record (`total_cost_usd`, as the Agent SDK's result and `claude -p

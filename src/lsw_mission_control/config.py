@@ -95,6 +95,9 @@ class AgentsCfg:
     idle_amber_min: float = 20
     idle_red_min: float = 55
     rows: int = 14
+    # More folders laid out as a projects folder (<run>/subagents/agent-<id>.jsonl beside its .meta.json):
+    # agents a job launches outside Claude Code (the Agent SDK on the API), listed with a session's own.
+    extra_dirs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -405,10 +408,11 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
     pl = _table(raw, "plan", {"after_server"})
     after_server = _get(pl, "[plan]", "after_server", str, None)  # checked against the plugins below
 
-    a = _table(raw, "agents", {"scan_window_h", "silent_stopped_min", "idle_amber_min", "idle_red_min", "rows"})
+    a = _table(raw, "agents", {"scan_window_h", "silent_stopped_min", "idle_amber_min", "idle_red_min", "rows", "extra_dirs"})
     agents = AgentsCfg(*(float(_get(a, "[agents]", k, (int, float), d)) for k, d in
                          (("scan_window_h", 48), ("silent_stopped_min", 25), ("idle_amber_min", 20), ("idle_red_min", 55))),
-                       rows=_at_least(_get(a, "[agents]", "rows", int, 14), "[agents].rows", 1))
+                       rows=_at_least(_get(a, "[agents]", "rows", int, 14), "[agents].rows", 1),
+                       extra_dirs=tuple(str(_path(base, d)) for d in _strs(a, "[agents]", "extra_dirs", ())))
     for key in ("scan_window_h", "silent_stopped_min"):
         if getattr(agents, key) <= 0:
             raise ConfigError(f"[agents].{key} must be more than 0")

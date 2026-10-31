@@ -86,6 +86,7 @@ def test_cache_dir_overrides(tmp_path, monkeypatch):
     ("schema = 1\n[github]\npoll_s = 5\n", "[github].poll_s must be at least 30 (seconds)"),
     ("schema = 1\n[github]\ntiming_poll_s = 0\n", "[github].timing_poll_s must be at least 60"),
     ("schema = 1\n[agents]\nrows = 0\n", "[agents].rows must be at least 1"),
+    ("schema = 1\n[agents]\nextra_dirs = 'x'\n", "[agents].extra_dirs must be a list"),
     ("schema = 1\n[agents]\nscan_window_h = 0\n", "[agents].scan_window_h must be more than 0"),
     ("schema = 1\n[agents]\nidle_red_min = -1\n", "[agents].idle_red_min must be at least 0"),
     ("schema = 1\n[layout]\nmax_width = 0\n", "[layout].max_width must be at least 60"),
