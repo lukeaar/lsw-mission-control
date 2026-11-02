@@ -1,0 +1,12 @@
+╭─  Release 1.4.0  ────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ━━━━━━━━━━━━━━━━━━━━━━━━ 7% of the release done  ·  1/4 items ready  ·  release out —                                │
+│                                                                                                                      │
+│ item                                    stages       stage            progress                                   eta │
+│ Reimport the catalogue                 ◉─○─○─○       import?          ━━━━━━━━━━━━━━━━━━━━━  50%                   — │
+│ Ranking tune-up                         ○─○─○        after reimport   ━━━━━━━━━━━━━━━━━━━━━   0%                   — │
+│ Security review                         ○─○─○        after all        ━━━━━━━━━━━━━━━━━━━━━   0%                   — │
+│ ● 1 finished                                                                                                       ✓ │
+│                                                                                                                      │
+│ Final merge                        after all above   from —           takes ~3h30                             done — │
+│ Tag 1.4.0 + packages               CI, tag, release  from —           takes ~47m                               out — │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

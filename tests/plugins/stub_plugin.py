@@ -12,6 +12,9 @@ from lsw_mission_control.theme import C
 # live job states the tests switch between through the plugin's state["job"]
 JOBS = {
     "running": LiveJob(left=400, frac=0.6, eta=2 * 3600.0, eta_life=3 * 3600.0, live=True, stalled_label="import stalled"),
+    # the running job an hour on: an hour less left
+    "an-hour-on": LiveJob(left=200, frac=0.8, eta=1 * 3600.0, eta_life=3 * 3600.0, live=True,
+                          stalled_label="import stalled"),
     "done": LiveJob(left=0, frac=1.0, eta=0.0, eta_life=0.0, live=True),
     "not-live": LiveJob(left=400, frac=0.6, eta=2 * 3600.0, eta_life=3 * 3600.0, live=False),
     "stalled": LiveJob(left=400, frac=0.6, eta=None, eta_life=3 * 3600.0, live=True, stalled_label="import stalled"),

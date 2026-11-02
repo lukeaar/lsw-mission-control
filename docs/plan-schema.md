@@ -21,6 +21,8 @@ item is common), so the plan can carry its own explanations.
      "before": [["design", "design:export", 30], ["your sign-off", null, 0]]},
     {"name": "Dark mode polish", "key": "dark", "build": 45, "review": 15, "fix": 20, "flags": ["after:startup"],
      "by_hand": {"build": "2026-09-20T18:10:00+10:00"}},
+    {"name": "Search index rebuild", "key": "reindex", "build": 20, "review": 10, "fix": 10, "after_server": true,
+     "before": [["reindex", null, 0]]},
     {"name": "Security review", "key": "security", "build": 60, "review": 30, "fix": 30, "flags": ["after_all", "owner_ok"]}
   ],
   "other": [
@@ -55,7 +57,7 @@ item is common), so the plan can carry its own explanations.
 | `later` | no | the releases after that one, in order: a list of `next`-shaped releases, each its own panel |
 | *plugin keys* | per plugin | a plugin may own keys; it validates them, and a plan it rejects is not loaded |
 
-### `items`: `{name, key, build, review, fix, flags?, before?, paused?, paused_until?, by_hand?}`
+### `items`: `{name, key, build, review, fix, flags?, before?, paused?, paused_until?, by_hand?, after_server?}`
 
 - Agents are labelled `build:<key>`, `review:<key>` and `fix:<key>`; `build`/`review`/`fix` are
   planned minutes (scaled by the release's calibration once 3 of a kind have finished).
@@ -93,6 +95,19 @@ item is common), so the plan can carry its own explanations.
   reads `hold ended` until its next stage starts (the plan keeps no start for a hold, so that cannot
   be told from a stage finished before it). Take the hold out of the plan when you resume an item
   early.
+- `after_server: true` (alias `after_live`): the FIRST `before` stage mirrors a plugin's live job,
+  as an `other` item's first stage does (below): the same mark and state (its share done and time
+  left, done, "stalled", unknown while the plugin has not answered, "plugin error"), so such an item
+  needs at least one `before` stage (an item with no key is done, and needs none). The job's time
+  left is that stage's, measured, never scaled by the calibration: the item's stages after it, the
+  items that run after it (`after:<key>`, `after_all`), the final merge's start and the release's
+  finish count it, so they hold still while the job keeps its pace (a stage of fixed minutes in its
+  place counts them from now, and they slide with the clock). With no finish time for the job,
+  neither they nor the release have one (`—`; the final merge and the tag row read `from —`, the
+  header `release out —`). Its own `after:<key>`/`after_all` count too: its stages after the job
+  come after the longer of the job's time left and that work's. While the job is unfinished the row
+  reads it, never a `your …` stage of its own, `your go-ahead` or `hold ended` (they come once it is
+  done); held, it reads "paused" and keeps its time left, as any item.
 
 ### `other`: `{name, stages, paused?, after?, after_server?}`
 
@@ -104,7 +119,7 @@ item is common), so the plan can carry its own explanations.
 - `after_server: true` (alias `after_live`): the FIRST stage mirrors a plugin's live job (its share
   done, its time left, "stalled", or unknown while the plugin has not answered), so such an item
   needs at least that stage. Held (`paused`), its stages after the job read held, as any held row's
-  do.
+  do. A release item can wait on the job too (`items`, above); a `next` or `later` item cannot.
 
 ### `next`: `{release, about, items: [{key, name, group, before, build, review, fix, flags, paused?, paused_until?, by_hand?}]}`
 
@@ -123,6 +138,10 @@ so an item can wait on this release's work or another planned release's. A key n
 ignored.
 `build`/`review`/`fix` become stages only when their minutes are above 0; `by_hand` marks them done
 by hand, as a release item's (a stage it names that has no minutes is not there to mark). A planned
+item cannot wait on a live job: `after_server` (or `after_live`) on one is refused as a typo, never
+read in silence, since it has no finish time to count the job's in and its first stage would read
+as its own (a `null` one done once a later stage begins, while the job runs); set it when the item
+moves into `items`. A planned
 item can be held as a release item can (`paused`, `paused_until`): it reads "paused" ("from <when>"
 for a hold with an end), is not under way, the header counts it (`N paused`), and its agents leave
 Agents at work (but for a label a later item shares with a nearer release's item or with other work:

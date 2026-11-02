@@ -287,6 +287,21 @@ def test_other_after_server(tmp_path, update_golden, job):
     check(f"other/{job}.ansi", styled, update_golden)
 
 
+@pytest.mark.parametrize("job", ["running", "done", "not-live", "stalled", "unknown", "error"])
+def test_release_after_server(tmp_path, update_golden, job):
+    """A release item that waits on a plugin's live job, in every state the job can be in, and what
+    follows it: an item after it, one after all, the final merge and the tag row."""
+    from scenarios import live_release
+
+    p = Project(tmp_path)
+    live_release(p, job="running" if job == "error" else job)
+    if job == "error":
+        p.plugin_state["fail"] = "live_job"
+    plain, styled = testing.render_text(release_panel(p.engine().build_frame(120), 120)[0], 120)
+    check(f"release-after-server/{job}.txt", plain, update_golden)
+    check(f"release-after-server/{job}.ansi", styled, update_golden)
+
+
 def test_a_running_job_keeps_its_time_when_the_stages_after_it_are_done(tmp_path):
     """D7: with every later stage done, the row read "~0s · now" (100%) while the job still ran."""
     from lsw_mission_control.render.other import other_panel

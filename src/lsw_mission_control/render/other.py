@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from rich.console import Group
 from rich.text import Text
 
-from lsw_mission_control.progress import Prog, in_wait_order, short_name, stages_progress
+from lsw_mission_control.progress import Prog, in_wait_order, live_job_progress, short_name, stages_progress
 from lsw_mission_control.render.widgets import pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import clock, now
@@ -34,50 +34,11 @@ def other_panel(f: Frame, width: int):
         item = plan.other[i]
         stages = item.stages
         if item.after_server:
-            first, rest = stages[0], stages[1:]
             # Its later stages are held while the owner holds it, as any held row's are: a stopped
-            # re-run is held, never undone by the result before it (stages_progress, `paused`).
-            held = item.paused
-            # Until the job is known to be done it is an unfinished stage before them: a detached job
-            # among them with no unit done waits for its turn behind it (stages_progress,
-            # `unfinished_before`), whenever its file was made.
-            if f.live_job_error:
-                # The plugin behind this row failed: say so, never read it as "not reached yet".
-                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, paused=held,
-                                    unfinished_before=True)
-                p.marks = [("✕", C.RED_SOFT)] + p.marks
-                p.remaining, p.current, p.waiting, p.alert = None, "plugin error", False, True
-            elif job is None:
-                # Never reached (or switched off): the job's state and its time are unknown.
-                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, paused=held,
-                                    unfinished_before=True)
-                p.marks = [("○", C.FAINT)] + p.marks
-                p.remaining, p.current, p.waiting = None, f"{first[0]}?", True
-            elif job.left == 0:
-                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, paused=held)
-                p.marks = [("●", C.GREEN)] + p.marks
-            else:
-                # The job's own progress (its share of the queue) counts as work done; the time it
-                # has left weights it. Stalled or out of touch: the time is unknown.
-                eta = job.eta if job.eta is not None else job.eta_life
-                frac = min(job.frac, 0.999)
-                done_before = frac / (1 - frac) * (eta or 0.0)
-                p = stages_progress(rest, labels, now=t_now, cal=None, default_fix_share=share, wait_before=eta or 0.0,
-                                    done_before=done_before, paused=held, unfinished_before=True)
-                if p.current == "done":
-                    # Every later stage is behind it (they ran early): the job's own time is what is
-                    # left. stages_progress() reads a row with nothing left as done, dropping the wait.
-                    ran = p.end - p.start if p.start and p.end and p.end > p.start else 0.0
-                    behind = done_before + ran
-                    p.remaining = eta or 0.0
-                    p.fraction = behind / (behind + p.remaining) if behind + p.remaining > 0 else 0.0
-                    p.end = None
-                p.marks = [("◉", C.ACCENT)] + p.marks
-                p.current, p.waiting = first[0], False
-                if not job.live:
-                    p.remaining, p.current, p.waiting = None, f"{first[0]}?", True
-                elif job.eta is None:
-                    p.remaining, p.current, p.alert = None, job.stalled_label, True
+            # re-run is held, never undone by the result before it (stages_progress, `paused`). It
+            # follows its live job alone: its `after` has no effect.
+            p = live_job_progress(stages, labels, job, f.live_job_error, now=t_now, cal=None, default_fix_share=share,
+                                  paused=item.paused)
         else:
             # Until that work is done: "after <name>" while nothing of its own runs, and a finish
             # never before that work's (begun or not); none while that work has none.

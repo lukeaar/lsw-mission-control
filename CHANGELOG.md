@@ -110,6 +110,19 @@ balance the project's own spend files record (`total_cost_usd`, as the Agent SDK
 --output-format json` write it), with the dollars and the day the credits expire (`$3.75 of $200 · until 27
 Nov`). It draws with no plan data too.
 
+A release item can wait on a plugin's live job, as other work can: `"after_server": true` (alias
+`after_live`) makes its first `before` stage mirror the job, with an other item's marks and states (its
+share done and time left, done, `stalled`, unknown while the plugin has not answered, `plugin error`), so
+the item needs a `before` stage (a plan without one is refused). The job's time left is that stage's,
+measured and never scaled by the calibration, and what follows counts it: the item's later stages, the
+items after it (`after:<key>`, `after_all`), the final merge's start and the release's finish, which hold
+still as the clock moves. A release could wait on a job only through a stage of fixed minutes with no
+agent, which read `queued` and counted its minutes from now, so its finish slid forward with the clock (a
+release read `in 9d16h` for two hours). While the job has no finish time neither have they (`—`: the final
+merge and the tag row read `from —`, the header `release out —`), and while it is unfinished the row reads
+it, never a `your …` stage of its own, `your go-ahead` or `hold ended`. A `next` or `later` item cannot
+wait on a live job: `after_server` there is refused as a typo, never read in silence.
+
 Fixed before the first release:
 
 - An Agent SDK session that ended its turn reads as done. Claude Code appends bookkeeping records after a
@@ -400,7 +413,8 @@ Fixed before the first release:
 Plugin API (additions only): `ctx.run(..., cwd=)`; `Plugin.__init__` sets `self.name` to the
 `[[plugins]]` name; `validate_options` names the type it expected; `render.widgets.fit_stages`,
 `STAGES_MIN` and `ITEM_MIN` (`work_table` draws its stages column at `fit_stages()`, and
-`table_widths` never gives the names less than one cell). A plugin loaded by module name
+`table_widths` never gives the names less than one cell); `render.widgets.milestone_row` draws a
+milestone not begun whose start is not known (`start` None: `from —`). A plugin loaded by module name
 is watched for reloads like one loaded by file. The live view reloads only for files that can be
 modules (an editor's `.#x.py` lock or a sync tool's `x (1).py` copy used to fail the gate). The
 launcher's first-run notice goes to stderr; a status-line shim that cannot find the engine says so

@@ -156,6 +156,36 @@ def test_after_live_is_another_name_for_after_server():
     assert [o.after_server for o in plan.other] == [True, False]
 
 
+def test_a_release_item_can_wait_on_a_live_job():
+    """`after_server` (or `after_live`) on a release item: its first before stage is the job's. An item
+    with no key is done, whatever else it says, so it needs no before stage."""
+    plan = parse_plan({"release": "1", "items": [
+        {"name": "A", "key": "a", "build": 10, "after_server": True, "before": [["job", None, 0]]},
+        {"name": "B", "key": "b", "after_live": "yes", "before": [["job", None, 0], ["check", "check:b", 5]]},
+        {"name": "C", "key": "c", "before": [["job", None, 0]]},
+        {"name": "D", "key": None, "after_server": True}]})
+    assert [it.after_server for it in plan.items] == [True, True, False, True]
+    assert plan.before("b") == [("job", None, 0.0), ("check", "check:b", 5.0)]
+
+
+@pytest.mark.parametrize("where", ["next", "later"])
+@pytest.mark.parametrize("flag", ["after_server", "after_live"])
+def test_a_planned_item_cannot_wait_on_a_live_job(where, flag):
+    """refused as a typo, never read in silence: a planned item has no finish time to count the job's
+    in, and its first stage would read as its own (a null one done once a later stage begins, while the
+    job still runs). A false value says it waits on no job: no typo."""
+    item = {"key": "n", "name": "N", "build": 5, "before": [["job", None, 0], ["check", "check:n", 5]], flag: True}
+    rel = {"release": "2", "items": [item]}
+    raw = {"release": "1", "items": [], **({"next": rel} if where == "next" else {"later": [rel]})}
+    with pytest.raises(ValueError) as e:
+        parse_plan(raw)
+    assert str(e.value) == f"after_server of 'N' in {'next' if where == 'next' else 'later[0]'}: only items and " \
+                           "other rows wait on a live job"
+    for falsy in (False, None, 0, ""):
+        item[flag] = falsy
+        assert parse_plan(raw).planned()[0].items[0].stages[0] == ("job", None, 0.0)
+
+
 BASE = {"release": "1", "items": [{"name": "I", "key": "i", "build": 10}],
         "other": [{"name": "O", "stages": [["s", "s:o", 5]]},
                   {"name": "J", "after_server": True, "stages": [["job", None, 0], ["check", "check:j", 5]]}],
@@ -200,6 +230,16 @@ def with_change(path: str, value):
     ("items.0.fix", "inf", "fix of 'I' must be a number"),
     ("items.0.flags", "after:x", "flags of 'I' must be a list"),
     ("items.0", [], "each of items must be an object"),
+    # a release item after a live job needs its first before stage, the job's, as an other item its first stage
+    ("items.0.after_server", True, "'I' waits on a live job: its first before stage is the job's, so it needs one"),
+    ("items.0.after_live", 1, "'I' waits on a live job: its first before stage is the job's, so it needs one"),
+    ("items.0", {"name": "I", "key": "i", "build": 10, "after_server": True, "before": []},
+     "'I' waits on a live job: its first before stage is the job's, so it needs one"),
+    # a planned item cannot (test_a_planned_item_cannot_wait_on_a_live_job)
+    ("next.items.0.after_server", True, "after_server of 'N' in next: only items and other rows wait on a live job"),
+    ("later.0.items.0.after_live", True, "after_server of 'L' in later[0]: only items and other rows wait on a live job"),
+    ("next.items.0", {"key": "n", "name": "N", "build": 5, "before": [["job", None, 0]], "after_server": True},
+     "after_server of 'N' in next: only items and other rows wait on a live job"),
     ("next.items.0.key", ["n"], "key of 'N' must be text"),
     ("next.items.0.build", float("nan"), "build of 'N' must be a number"),
     ("next", [1], "next must be an object"),

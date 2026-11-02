@@ -16,6 +16,7 @@ from lsw_mission_control.progress import (
     item_progress,
     item_stages,
     item_started,
+    live_job_done,
     owner_stage,
     short_name,
     stages_progress,
@@ -52,17 +53,20 @@ def run_left(t0: float, minutes: float, t_now: float) -> tuple[float, float]:
     return max(60.0, -over), 0.0
 
 
-def tag_milestone(g: dict, merge_end: float, merge_done: bool, ci_min: float, rel_min: float, hands_min: float) -> dict:
+def tag_milestone(g: dict, merge_end: float | None, merge_done: bool, ci_min: float, rel_min: float,
+                  hands_min: float) -> dict:
     """Tag + release run, from GitHub: CI on the remote main's HEAD (once the final merge is
     done), the release tag, and the release run for it. Not started: it starts when the merge
-    is done. `over`: seconds the running CI or release run is past its median (its time left is
+    is done (`merge_end` None: a merge not begun whose start is not known, so neither is its start
+    or end). `over`: seconds the running CI or release run is past its median (its time left is
     then a lower bound)."""
     t_now = now()
     hands = hands_min * 60
     dur = (ci_min + rel_min) * 60 + hands
     rel, ci, tagged = g.get("rel"), g.get("ci"), g.get("tag")
-    start = max(merge_end, t_now)
-    todo = {"status": "todo", "start": start, "end": start + dur, "dur": dur, "fraction": 0.0, "phase": ""}
+    start = None if merge_end is None else max(merge_end, t_now)
+    todo = {"status": "todo", "start": start, "end": None if start is None else start + dur, "dur": dur,
+            "fraction": 0.0, "phase": ""}
     r0 = iso(rel["createdAt"]) if rel else None
     ci_t0 = iso(ci["createdAt"]) if ci else None
     # Main's CI created after the release run is a later commit's (main moved on after the tag), never the release's.
@@ -130,12 +134,19 @@ def release_rows(f: Frame) -> tuple[list[Item], list[Prog]]:
         held = it.held(t_now)
         stopped = held or (it.hold_ended(t_now) and not item_active_since(plan, it, labels, it.paused_until))
         # The hold itself takes time: nothing of it runs before the hold ends. It is a wait beside the
-        # one on the work it runs after (counted once along a chain of rows held to one time).
+        # one on the work it runs after (counted once along a chain of rows held to one time). A row
+        # after a plugin's live job (after_server) counts the job's time left as its first stage's.
         p = item_progress(plan, it, labels, now=t_now, cal=cal, default_fix_share=rc.fix_share,
                           wait_before=0.0 if wait is None else wait[0], after=after, paused=stopped,
-                          hold=hold_left(it, t_now))
+                          hold=hold_left(it, t_now), job=f.live_job, job_error=f.live_job_error)
         stages = item_stages(plan, it)
-        if (i >= last and "owner_ok" in it.flags and p.current != "done"
+        # While that job is unfinished the row reads its state (its stage and time left, stalled, unknown,
+        # the plugin's error), which runs on its own: never the owner's go-ahead, a stage of theirs, or a
+        # hold that ended. Held, it reads paused, as any row.
+        on_job = it.after_server and not live_job_done(f.live_job, f.live_job_error)
+        if on_job:
+            pass
+        elif (i >= last and "owner_ok" in it.flags and p.current != "done"
                 and not item_started(plan, it.key, labels)):
             p.current, p.waiting, p.owner = "your go-ahead", True, True
         elif wait is None and (k := owner_stage(stages, p)) is not None:
@@ -148,7 +159,7 @@ def release_rows(f: Frame) -> tuple[list[Item], list[Prog]]:
             # time left, so the release's finish and what runs after it still count it.
             p.current, p.failed, p.paused, p.owner = "paused", False, True, False
             p.resume = it.paused_until
-        elif stopped and p.current != "done" and not (p.waiting and (p.waits or p.owner)):
+        elif stopped and not on_job and p.current != "done" and not (p.waiting and (p.waits or p.owner)):
             # The hold is over and nothing has resumed the work (a row that waits on other work, or on
             # the owner, reads that wait instead): neither paused, nor failed, nor queued. It keeps the
             # time left it had while held, as if it resumed now, so what runs after it counts it.
@@ -169,9 +180,11 @@ def release_panel(f: Frame, width: int):
     items, progs = release_rows(f)
     rows: list[tuple[str, Prog]] = [(it.name, p) for it, p in zip(items, progs)]
     sizes: list[float] = [item_minutes(plan, it, cal) for it in items]
-    # A release item always has a finish time (it waits only on other release items, which have one,
-    # a failed one's counting its re-run).
-    worst = max((p.remaining or 0.0 for _n, p in rows), default=0.0)
+    # A release item has a finish time (a failed one's counts its re-run), but for one after a plugin's live
+    # job that has none (stalled, unknown, the plugin's error) and the items that run after it: the final
+    # merge's start and the release's finish then have none either. None: not known.
+    unknown = any(p.remaining is None for _n, p in rows if p.current != "done")
+    worst = None if unknown else max((p.remaining or 0.0 for _n, p in rows), default=0.0)
     gh_timing = f.store.get("gh_timing")
     run_min = float(rc.release_run_minutes)
     ci_min, rel_min = gh_timing if gh_timing else (rc.fallback_minutes - rc.hands_minutes - run_min, run_min)
@@ -189,8 +202,8 @@ def release_panel(f: Frame, width: int):
         merge = {"status": "failed" if fm.failed else "running", "start": fm.start,
                  "end": t_now + (fm.remaining or 0.0), "fraction": fm.fraction}
     else:
-        start = t_now + worst
-        merge = {"status": "todo", "start": start, "end": start + fm_cfg.minutes * 60,
+        start = None if worst is None else t_now + worst
+        merge = {"status": "todo", "start": start, "end": None if start is None else start + fm_cfg.minutes * 60,
                  "dur": fm_cfg.minutes * 60, "fraction": 0.0}
     tag = tag_milestone(dict(f.store.get("release_gh") or {}), merge["end"], merge["status"] == "done", ci_min, rel_min,
                         rc.hands_minutes)
@@ -223,7 +236,7 @@ def release_panel(f: Frame, width: int):
     npaused = sum(p.paused for _n, p in rows)
     nended = sum(p.hold_ended is not None for _n, p in rows)
     nowner = sum(p.owner for _n, p in rows)
-    first = bar(overall, METER_W, C.GREEN if released else eta_colour(release_at - t_now))
+    first = bar(overall, METER_W, C.GREEN if released else eta_colour(None if release_at is None else release_at - t_now))
     pct = 100 if released else min(99, int(overall * 100))  # never "100%" before it is out
     words = rc.words
     first.append(f" {pct}% {words['done_share']}", style=C.TEXT)
@@ -240,6 +253,8 @@ def release_panel(f: Frame, width: int):
         phrases.append(Text(f"{nowner} wait on you", style=C.AMBER))  # as the planned releases' heads say it
     if released:
         phrases.append(Text.assemble((f"{words['released']} ", C.GREEN), (clock(release_at), f"bold {C.GREEN}")))
+    elif release_at is None:
+        phrases.append(Text.assemble((f"{words['out']} ", C.MUTED), ("—", C.FAINT)))  # a row has no finish time
     else:
         # A run past its median makes the release's finish a lower bound, as the tag row reads it.
         at_least = "≥" if tag.get("over", 0.0) > 0 else ""

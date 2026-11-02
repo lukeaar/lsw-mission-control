@@ -293,6 +293,25 @@ def midway(p: Project, job: str = "running") -> None:
     p.ps = PS_SAFE
 
 
+LIVE_ITEMS = [
+    {"name": "Search filters", "key": None, "build": 0, "review": 0, "fix": 0},
+    # its first before stage is the plugin's live job (2h00 left while it runs), then 30 + 15 + 20 x 0.7 min
+    {"name": "Reimport the catalogue", "key": "catalogue", "build": 30, "review": 15, "fix": 20, "after_server": True,
+     "before": [["import", None, 0]]},
+    {"name": "Ranking tune-up", "key": "ranking", "build": 40, "review": 10, "fix": 10, "flags": ["after:catalogue"]},
+    {"name": "Security review", "key": "security", "build": 30, "review": 10, "fix": 10, "flags": ["after_all"]},
+]
+
+
+def live_release(p: Project, job: str = "running") -> None:
+    """midway's project and other work, with a release that waits on the plugin's live job: one item's
+    first stage is the job, one runs after it, one after all. No agent has begun: every time the
+    release reads comes from the job and the plan."""
+    midway(p, job=job)
+    p.runs.clear()
+    p.plan(release_plan(items=[dict(it) for it in LIVE_ITEMS]))
+
+
 def empty(p: Project) -> None:
     """A project just set up with `lsw-mc init`: nothing has happened yet."""
     import lsw_mission_control

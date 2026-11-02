@@ -59,6 +59,7 @@ class Item(Held):
     # its build, review or fix done by hand (`by_hand`): ((kind, when in epoch s), ...); each reads as a
     # stage whose spec is {"done": when} (progress.item_stages)
     by_hand: tuple[tuple[str, float], ...] = ()
+    after_server: bool = False  # its first `before` stage mirrors a plugin's live job, as an other item's first stage
 
 
 @dataclass(frozen=True)
@@ -202,9 +203,13 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
         if key is not None and it.get("before"):
             before = tuple(parse_stage(st, it["name"]) for st in _list(it["before"], f"before of {name!r}"))
             pre[str(key)] = before
+        after_server = bool(it.get("after_server") or it.get("after_live"))
+        if after_server and key is not None and not before:
+            # An item with no key is done, whatever else it says (its `before` is not read either).
+            raise ValueError(f"{name!r} waits on a live job: its first before stage is the job's, so it needs one")
         until = _until(it, name)
         items.append(Item(*fields_, before, bool(it.get("paused")) or until is not None, until,
-                          tuple(_by_hand(it, name).items())))
+                          tuple(_by_hand(it, name).items()), after_server))
     other = []
     for o in _list(d.get("other", []), "other"):
         o = _obj(o, "each of other")
@@ -284,6 +289,10 @@ def _planned_release(n, where: str) -> NextRelease:
     for it in _list(n.get("items", []), f"{where}.items"):
         it = _obj(it, f"each of {where}.items")
         name = str(it["name"])
+        if it.get("after_server") or it.get("after_live"):
+            # A typo, never read in silence: a planned item has no finish time to count the job's in,
+            # and its first stage would read as its own (a null one done once a later stage begins).
+            raise ValueError(f"after_server of {name!r} in {where}: only items and other rows wait on a live job"[:120])
         key = it.get("key")
         if (key is not None and not isinstance(key, (str, int))) or isinstance(key, bool):
             raise ValueError(f"key of {name!r} must be text")

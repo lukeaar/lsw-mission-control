@@ -18,6 +18,7 @@ from lsw_mission_control.util import iso
 
 if TYPE_CHECKING:
     from lsw_mission_control.plan import Item, Plan
+    from lsw_mission_control.plugin import LiveJob
 
 
 class Prog:
@@ -457,6 +458,66 @@ def stages_progress(stages: Sequence, labels: dict, *, now: float, cal: Calibrat
     return p
 
 
+def live_job_done(job: LiveJob | None, error: str | None) -> bool:
+    """The plugin's live job, which an after_server row's first stage mirrors, is done: its plugin
+    answered, with no error, and the job has no unit left."""
+    return not error and job is not None and job.left == 0
+
+
+def live_job_progress(stages: Sequence, labels: dict, job: LiveJob | None, error: str | None, *, now: float,
+                      cal: Calibration | None, default_fix_share: float, wait_before: float | None = 0.0,
+                      after: str = "", paused: bool = False, hold: float = 0.0) -> Prog:
+    """A row whose FIRST stage mirrors a plugin's live job (`after_server`: an other item's first stage,
+    a release item's first `before` stage): `job` is what the plugin answered this frame (None: not
+    yet, or switched off) and `error` its failure, if it failed. The stages after it run as usual
+    (stages_progress()). The job's time left is its stage's, measured, never planned: `cal` scales
+    only the stages after it. It is a wait before them, as `wait_before` (what the row runs after,
+    `after` its short name) is: they come after the longer of the two. Done, the job leaves the row
+    that wait alone. Stalled, out of touch, unknown or failed, the row has no finish time."""
+    first, rest = stages[0], stages[1:]
+    kw = {"now": now, "cal": cal, "default_fix_share": default_fix_share, "paused": paused}
+    # Until the job is known to be done it is an unfinished stage before them: a detached job among
+    # them with no unit done waits for its turn behind it (stages_progress, `unfinished_before`),
+    # whenever its file was made.
+    if error:
+        # The plugin behind this row failed: say so, never read it as "not reached yet".
+        p = stages_progress(rest, labels, unfinished_before=True, **kw)
+        p.marks = [("✕", C.RED_SOFT)] + p.marks
+        p.remaining, p.current, p.waiting, p.alert = None, "plugin error", False, True
+    elif job is None:
+        # Never reached (or switched off): the job's state and its time are unknown.
+        p = stages_progress(rest, labels, unfinished_before=True, **kw)
+        p.marks = [("○", C.FAINT)] + p.marks
+        p.remaining, p.current, p.waiting = None, f"{first[0]}?", True
+    elif job.left == 0:
+        p = stages_progress(rest, labels, wait_before=wait_before, after=after, hold=hold, **kw)
+        p.marks = [("●", C.GREEN)] + p.marks
+    else:
+        # The job's own progress (its share of the queue) counts as work done; the time it has left
+        # weights it. Stalled or out of touch: the time is unknown.
+        eta = job.eta if job.eta is not None else job.eta_life
+        frac = min(job.frac, 0.999)
+        done_before = frac / (1 - frac) * (eta or 0.0)
+        wait = None if wait_before is None else max(eta or 0.0, wait_before)
+        p = stages_progress(rest, labels, wait_before=wait, after=after, done_before=done_before, hold=hold,
+                            unfinished_before=True, **kw)
+        if p.current == "done":
+            # Every later stage is behind it (they ran early): the job's own time is what is left.
+            # stages_progress() reads a row with nothing left as done, dropping the wait.
+            ran = p.end - p.start if p.start and p.end and p.end > p.start else 0.0
+            behind = done_before + ran
+            p.remaining = eta or 0.0
+            p.fraction = behind / (behind + p.remaining) if behind + p.remaining > 0 else 0.0
+            p.end = None
+        p.marks = [("◉", C.ACCENT)] + p.marks
+        p.current, p.waiting = first[0], False
+        if not job.live:
+            p.remaining, p.current, p.waiting = None, f"{first[0]}?", True
+        elif job.eta is None:
+            p.remaining, p.current, p.alert = None, job.stalled_label, True
+    return p
+
+
 def stages_started(stages: Sequence, labels: dict) -> bool:
     """Any of the stages has begun: one of its agents is known, or its detached job's progress
     file exists."""
@@ -517,15 +578,20 @@ def item_stages(plan: Plan, item: Item) -> list:
 
 def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Calibration, default_fix_share: float,
                   wait_before: float | None = 0.0, after: str = "", paused: bool | None = None,
-                  hold: float = 0.0) -> Prog:
+                  hold: float = 0.0, job: LiveJob | None = None, job_error: str | None = None) -> Prog:
     """A release item: its "before" stages (measure, design), then build → review → fix,
     labelled build:<key> etc. `paused`: its stages are held (stages_progress()); by default while
-    the owner holds it (Item.held). `hold`: seconds until its hold ends (stages_progress())."""
+    the owner holds it (Item.held). `hold`: seconds until its hold ends (stages_progress()). An
+    `after_server` item's first before stage mirrors the plugin's live job, `job` (`job_error`: its
+    plugin failed), as an other item's first stage does (live_job_progress())."""
     if item.key is None:
         return Prog(0.0, "done", [("●", C.GREEN)] * 3, fraction=1.0)
-    return stages_progress(item_stages(plan, item), labels, now=now, cal=cal, default_fix_share=default_fix_share,
-                           wait_before=wait_before, after=after, paused=item.held(now) if paused is None else paused,
-                           hold=hold)
+    stages = item_stages(plan, item)
+    kw = {"now": now, "cal": cal, "default_fix_share": default_fix_share, "wait_before": wait_before, "after": after,
+          "paused": item.held(now) if paused is None else paused, "hold": hold}
+    if item.after_server and plan.before(item.key):
+        return live_job_progress(stages, labels, job, job_error, **kw)
+    return stages_progress(stages, labels, **kw)
 
 
 def hold_left(item, at: float) -> float:

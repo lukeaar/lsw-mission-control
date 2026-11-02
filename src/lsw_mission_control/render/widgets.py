@@ -211,6 +211,11 @@ def milestone_row(t: Table, name: str, name_style: str, stages, m: dict, bar_w: 
                   Text("needs rerun", style=f"bold {C.RED_SOFT}") if failed
                   else Text(f"{'≥' if m.get('over', 0.0) > 0 else '~'}{human(m['end'] - t_now)} · {clock(m['end'])}",
                             style=col))
+    elif m["start"] is None:
+        # Not begun, after work that has no finish time (an item after a live job that has none): when it
+        # starts and finishes is not known, as a work row's finish is not ("—").
+        t.add_row(label, stages, Text("from —", style=C.MUTED), Text(f"takes ~{human(m['dur'])}", style=C.MUTED),
+                  Text(f"{finish_word} —", style=C.FAINT))
     else:
         starts = "from now" if m["start"] <= t_now + 60 else f"from {clock(m['start'])}"
         t.add_row(label, stages, Text(starts, style=C.MUTED), Text(f"takes ~{human(m['dur'])}", style=C.MUTED),

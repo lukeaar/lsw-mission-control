@@ -84,9 +84,10 @@ Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, g
                                                       # online (connectivity.Online)
 Plan(release, items, other, next, plugin_data, pre, final_merge_by_hand, later); .before(key) .release_before(i)
                                                       # .planned(): next (if any), then later
-Item(name, key, build, review, fix, flags, before, paused, paused_until, by_hand); .held(at) .hold_ended(at)
-                                                      # a hold with an end ends on the clock, not at the plan's
-                                                      # next read; by_hand: ((kind, when), ...), each a {"done"} stage
+Item(name, key, build, review, fix, flags, before, paused, paused_until, by_hand, after_server); .held(at)
+                                                      # .hold_ended(at): a hold with an end ends on the clock, not at
+                                                      # the plan's next read; by_hand: ((kind, when), ...), each a
+                                                      # {"done"} stage; after_server: its first before stage, the job's
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags, paused,
                                                       # paused_until); .held(at) .hold_ended(at), as Item's (Held)
 NextRelease(release, about, items)                    # `next`, and each release of `later`
@@ -101,6 +102,9 @@ calibrate(cal, items, labels)                         # in place: a factor moves
 stages_progress(stages, labels, *, now, cal, default_fix_share, wait_before, after, done_before, paused, hold,
                 unfinished_before)                    # hold: seconds until a hold ends, a wait beside wait_before;
                                                       # unfinished_before: a live job before them (after_server)
+live_job_progress(stages, labels, job, error, *, now, cal, default_fix_share, wait_before, after, paused, hold)
+                                                      # an after_server row (other, items): its first stage is the
+                                                      # job, whose time left is a wait beside wait_before, unscaled
 job_file(path) -> JobFile(units, first, last, start) | None   # None: no progress file, the job has not
                                                       # begun; start: the file's birth time or earliest line
 wait_for([(ref, Prog)], rerun) -> (seconds | None, ref) | None   # what a row still waits for; None:
@@ -170,7 +174,8 @@ Engine wiring:
   out as n `ratio=1` columns.
 - **after_server**: the live job of `[plan] after_server`'s plugin (or of the only plugin that
   implements `live_job`). `None`: the row has no job to wait on; `left == 0`: done; otherwise the
-  row is weighted by the job's progress and shows `stalled_label` when the job stalls.
+  row is weighted by the job's progress and shows `stalled_label` when the job stalls. An other
+  item's first stage and a release item's first `before` stage read it alike (`live_job_progress`).
 - **Errors**: `side_card`/`panel`/`live_job` exceptions, and results of the wrong type, are caught
   per plugin and recorded for the frame: the plugin's card shows `error  Type: message` (wrapped),
   a failed `live_job` also turns the waiting rows red (`✕ … plugin error`), and `--once` writes the
@@ -186,7 +191,8 @@ Engine wiring:
 The plan and notes schemas are in [plan-schema.md](plan-schema.md). `parse_plan` ignores unknown
 keys, coerces `bool(paused)`, `bool(after_server)` and `str(flag)`, and refuses values that could
 only be typos (the last good plan stays, and the title says why). `after_live` is accepted as an
-alias of `after_server`. A notes file that does not load keeps the last good notes the same way.
+alias of `after_server`, which a `next` or `later` item may not set. A notes file that does not load
+keeps the last good notes the same way.
 
 | What | Where | Scope | Writer(s) |
 |---|---|---|---|
@@ -338,7 +344,9 @@ Panels:
   row); milestone wording; held items (`paused`, and `paused_until` held
   until then on the clock: after it the real stage, or `hold ended` · `not resumed` and `N not
   resumed` while nothing of the item has run since; the hold is a wait beside the one on the work
-  the row runs after, so a chain of rows held to one time counts it once).
+  the row runs after, so a chain of rows held to one time counts it once); `after_server` items (the
+  job's states, as other work's; what follows them counting its time left, unscaled; `from —`,
+  `done —`, `out —` and `release out —` while it has none).
 - Next release, then each later release (`later`) in order, their rows worked out together once a
   frame (`planned_rows`, kept in `Frame.memo`, with the release's rows, `release_rows`, when a planned
   row waits on one): an `after:<key>` names its own release's item, else the nearest release's
@@ -386,8 +394,8 @@ Panels:
 
 `tests/test_*.py` cover each module; `tests/golden/` holds whole frames at 80/100/120/150 columns
 (plain and styled, a three-release plan among them), the tag row's phases, held and ended holds
-(`hold-ended`), the usage states, the `after_server` states, the bottom row (its `conn-*` files:
-every connection state), a broken plan and notes, the frame-error panel and logo frames. All their
-data is synthetic (`tests/scenarios.py` and a stub plugin), generated at fixed offsets from a frozen
-clock.
+(`hold-ended`), the usage states, the `after_server` states (`other/`, `release-after-server/`), the
+bottom row (its `conn-*` files: every connection state), a broken plan and notes, the frame-error
+panel and logo frames. All their data is synthetic (`tests/scenarios.py` and a stub plugin),
+generated at fixed offsets from a frozen clock.
 `pytest --update-golden` rewrites the goldens; every changed line is reviewed before a commit.
