@@ -103,7 +103,9 @@ freezes the clock.
   `paused`; once a hold with an end is over it reads its stage again, or `hold ended` while nothing
   has resumed it. An item whose next stage is yours (`your …`) reads it, and the header counts what
   waits on you. An item can wait on a plugin's live job, as other work can: its first stage reads
-  the job, and what follows it counts the job's time left. The finished items are one row below the
+  the job, and what follows it counts the job's time left. An item whose build, review and fix are
+  all 0 draws its own stages only, and is done when they are. No item holds more than 5 stages: a
+  plan with one over is not loaded, and the title names each. The finished items are one row below the
   rest, `● N finished`. Then the final merge and the tag row (CI on the remote main, the tag, the
   release workflow run, from GitHub).
 - **Next release** (optional): planned items, grouped, with no finish time until work starts; the

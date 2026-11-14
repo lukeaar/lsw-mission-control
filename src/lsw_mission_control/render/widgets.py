@@ -94,7 +94,7 @@ def chips_of(marks, release: bool = False, join: str = CHIP_JOIN) -> Text:
 def stages_width(plan: Plan, fm: FinalMergeCfg) -> int:
     """Wide enough for the row with the most stages (at least 16), so every row's dots and
     lines fit whole and centre on one axis."""
-    most = max([3 + len(plan.before(it.key)) for it in plan.items if it.key] + [len(o.stages) for o in plan.other]
+    most = max([plan.stages_of(it) for it in plan.items if it.key] + [len(o.stages) for o in plan.other]
                + [len(fm.stages)], default=3)
     return max(STAGES_MIN, most + len(CHIP_JOIN) * (most - 1))
 

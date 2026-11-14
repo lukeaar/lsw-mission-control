@@ -80,7 +80,7 @@ def calibrate(cal: Calibration, items: Sequence[Item], labels: dict) -> None:
     reviews = fixes = 0
     for it in items:
         key = it.key
-        if not key:
+        if not key or not it.builds:  # an item with no build, review or fix stage has none to measure
             continue
         for kind, mins in (("build", it.build), ("review", it.review), ("fix", it.fix)):
             a = labels.get(f"{kind}:{key}")
@@ -567,10 +567,13 @@ def in_wait_order(n: int, targets_of: Callable[[int], Sequence[int]],
 def item_stages(plan: Plan, item: Item) -> list:
     """A release item's stages: its "before" stages (measure, design), then build → review → fix,
     labelled build:<key> etc. ([] for an item with no key: it is done). One its `by_hand` names was done
-    by hand then: its spec is {"done": <time>}, as a stage done by hand has."""
+    by hand then: its spec is {"done": <time>}, as a stage done by hand has. An item whose build, review
+    and fix are all 0 minutes has its "before" stages only (Item.builds): it is done when they are."""
     key = item.key
     if key is None:
         return []
+    if not item.builds:
+        return plan.before(key)
     by_hand = dict(item.by_hand)
     return plan.before(key) + [(k, {"done": by_hand[k]} if k in by_hand else f"{k}:{key}", m)
                                for k, m in (("build", item.build), ("review", item.review), ("fix", item.fix))]
@@ -587,6 +590,8 @@ def item_progress(plan: Plan, item: Item, labels: dict, *, now: float, cal: Cali
     if item.key is None:
         return Prog(0.0, "done", [("●", C.GREEN)] * 3, fraction=1.0)
     stages = item_stages(plan, item)
+    if not stages:  # no build, review or fix (Item.builds) and no "before" stage: nothing is left of it
+        return Prog(0.0, "done", [], fraction=1.0)
     kw = {"now": now, "cal": cal, "default_fix_share": default_fix_share, "wait_before": wait_before, "after": after,
           "paused": item.held(now) if paused is None else paused, "hold": hold}
     if item.after_server and plan.before(item.key):
@@ -650,10 +655,14 @@ def stages_active_since(stages: Sequence, labels: dict, since: float) -> bool:
 
 def item_started(plan: Plan, key: str | None, labels: dict) -> bool:
     """Any of the item's stages has begun (a before-stage's agent, or its job's progress file), or was
-    done by hand (a before-stage's {"done"}, or its build, review or fix named in `by_hand`)."""
+    done by hand (a before-stage's {"done"}, or its build, review or fix named in `by_hand`). An item
+    with no build, review or fix stage (Item.builds) has begun when one of its "before" stages has."""
     if not key:
         return False
-    if any(it.by_hand for it in plan.items if it.key == key):
+    mine = [it for it in plan.items if it.key == key]
+    if mine and not any(it.builds for it in mine):
+        return stages_started(plan.before(key), labels)
+    if any(it.by_hand for it in mine):
         return True
     return stages_started(plan.before(key) + [(k, f"{k}:{key}", 0) for k in ("build", "review", "fix")], labels)
 

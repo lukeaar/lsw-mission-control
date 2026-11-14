@@ -22,7 +22,7 @@ lsw-mission-control/
     util.py               now/set_clock/local_now, iso, human, ago, clock, run, num, write_json, fit, count
     store.py              Store (thread-safe; get/set/update/snapshot, data under lock)
     plan.py               parse_stage, done_by_hand, parse_plan, Held, Item/OtherItem/NextItem/NextRelease/Plan,
-                          PlanLoader
+                          PlanLoader, MAX_STAGES, TooManyStages
     notes.py              Notes, read_notes, NotesLoader
     agents.py             transcript_facts, run_ended, stopped_with_run, scan_agents, scan_session_agents,
                           final_merge_labels, label_names, findings_of, stored_ok, store_since, FinishedStore,
@@ -83,15 +83,19 @@ C.GREEN …                                             # the palette in use; th
 Store: lock, get, set, update, snapshot, data         # keys: git, release_gh, gh_timing, tokens, tokens_by_model,
                                                       # online (connectivity.Online)
 Plan(release, items, other, next, plugin_data, pre, final_merge_by_hand, later); .before(key) .release_before(i)
-                                                      # .planned(): next (if any), then later
+                                                      # .planned(): next (if any), then later; .stages_of(item):
+                                                      # the stages a release item draws
 Item(name, key, build, review, fix, flags, before, paused, paused_until, by_hand, after_server); .held(at)
                                                       # .hold_ended(at): a hold with an end ends on the clock, not at
                                                       # the plan's next read; by_hand: ((kind, when), ...), each a
-                                                      # {"done"} stage; after_server: its first before stage, the job's
+                                                      # {"done"} stage; after_server: its first before stage, the job's;
+                                                      # .builds: build/review/fix drawn (any of them above 0)
 OtherItem(name, stages, paused, after, after_server); NextItem(name, key, group, stages, flags, paused,
                                                       # paused_until); .held(at) .hold_ended(at), as Item's (Held)
 NextRelease(release, about, items)                    # `next`, and each release of `later`
 PlanLoader(path, plugins).refresh() -> Plan           # mtime-gated; a bad parse keeps the last good plan; .note
+                                                      # (cut at 160, except TooManyStages: an item over
+                                                      # MAX_STAGES = 5, each named; no config lifts it)
 Notes(waiting_on_owner, in_progress_elsewhere, mtime); NotesLoader(path).refresh() -> Notes
 FinishedStore(path, readonly).merge(agents, plan, names, loaded, release_bound)   # release_bound: the final
                                                       # merge's labels; an agent of one begun before the

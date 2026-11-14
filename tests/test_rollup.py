@@ -11,6 +11,7 @@ import re
 
 import pytest
 
+from lsw_mission_control import plan as plan_module
 from lsw_mission_control import testing
 from lsw_mission_control.render.next_release import later_panel, next_panel
 
@@ -164,10 +165,13 @@ def test_the_finished_row_is_the_release_panels(tmp_path):
 
 
 @pytest.mark.parametrize("width", (80, 100, 150))
-def test_an_item_that_finishes_moves_no_other_row(tmp_path, width):
+def test_an_item_that_finishes_moves_no_other_row(tmp_path, width, monkeypatch):
     """The widest item finishes: its row goes and the finished row says one more, and nothing else
     moves. The stages column is sized by every item the release holds, finished or not, as the release
-    panel's is, so the other rows keep their dots and their names where they were."""
+    panel's is, so the other rows keep their dots and their names where they were. BIG is over the
+    plan's cap of stages (plan.MAX_STAGES: it would be refused), which is lifted here so that its row
+    is wider than the least stages column and the sizing shows."""
+    monkeypatch.setattr(plan_module, "MAX_STAGES", 10)
     p, q = Project(tmp_path / "before"), Project(tmp_path / "after")
     planned(p, "next", done=DONE + STEPS, running=("build:icons", "build:big"), extra=[BIG])
     planned(q, "next", done=DONE + STEPS + ("build:big",), extra=[BIG])

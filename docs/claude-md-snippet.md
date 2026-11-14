@@ -23,7 +23,10 @@ HAND, in the same turn as the change:
   in that item's `before` stages, never in `other`. Add an item when work joins the release, drop
   it when it leaves; correct a stage's minutes when measurements prove them wrong; a stage done by
   hand (no agent, no job) gets `{"done": "<ISO time>"}` as its spec when it is done, and an item's
-  build, review or fix done by hand goes in its `by_hand` (`{"build": "<ISO time>"}`). Work planned for
+  build, review or fix done by hand goes in its `by_hand` (`{"build": "<ISO time>"}`); an item whose
+  build, review and fix are all 0 has none of those three and is done when its `before` stages are.
+  An item holds at most 5 stages (the dashboard refuses a plan with more and names each item over):
+  split longer work into items chained with `after:<key>`. Work planned for
   the release after this one goes in `next`, and for each release after that in `later` (one entry
   per release, in order), never as a group inside `next`; when a release ships, `next` becomes
   `items` and the first of `later` becomes `next`.

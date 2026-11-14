@@ -8,8 +8,9 @@ ends). Both are re-read on every refresh: an edit shows within 5 s, and nothing 
 A plan that fails to parse is ignored — the last good plan stays on screen and the title says
 why (`status_plan.json not loaded (KeyError: 'release')`). So is a plan whose values could only be
 typos: minutes outside 0–1,000,000 (NaN and infinity included), a stage that is not
-`[name, label, minutes]`, a list where a name belongs. Unknown keys are ignored (a `note` on any
-item is common), so the plan can carry its own explanations.
+`[name, label, minutes]`, a list where a name belongs. So is a plan with an item of more than 5
+stages ("At most 5 stages an item", below). Unknown keys are ignored (a `note` on any item is
+common), so the plan can carry its own explanations.
 
 ```json
 {
@@ -60,7 +61,15 @@ item is common), so the plan can carry its own explanations.
 ### `items`: `{name, key, build, review, fix, flags?, before?, paused?, paused_until?, by_hand?, after_server?}`
 
 - Agents are labelled `build:<key>`, `review:<key>` and `fix:<key>`; `build`/`review`/`fix` are
-  planned minutes (scaled by the release's calibration once 3 of a kind have finished).
+  planned minutes (scaled by the release's calibration once 3 of a kind have finished). An item
+  with any of them above 0 draws all three, a 0 among them too.
+- An item whose `build`, `review` and `fix` are all 0 (or absent) draws none of them: it is its
+  `before` stages, and it is done when they are (with none, it is done). Its `by_hand` marks
+  nothing, and an agent labelled `build:<key>` (or `review:`, `fix:`) is no stage of it: it neither
+  begins the item (an `owner_ok` item's go-ahead) nor counts in the calibration. A last stage with
+  no agent (`null`) has no stage after it to begin, so it is done once marked `{"done": "<ISO
+  time>"}`. Such an item used to draw three empty stages after its last one and read "queued"
+  there, and was finished by marking them done in `by_hand`.
 - `key: null` counts as done.
 - `by_hand`: `{"build"?: "<ISO time>", "review"?: …, "fix"?: …}`, the ones of those stages done by
   hand, and when: each reads as a stage whose spec is `{"done": "<ISO time>"}` (below), with no
@@ -187,6 +196,18 @@ and later), until everything a row runs after is done:
 - A tie for "next to finish" goes to the row that is not waiting.
 - A row listed before the one it waits for still waits for it. A cycle (a typo) is broken where it
   closes.
+
+### At most 5 stages an item
+
+Every item holds at most 5 stages: a release item its `before` stages and, when it draws them, its
+build, review and fix (3 more); an `other` item its `stages`; a `next` or `later` item its `before`
+stages and each of build, review and fix it draws (those above 0 minutes). An item with no key is
+done and holds none. A plan with an item over 5 is not loaded: the last good plan stays, and the
+title names each item over, where it is and its count, in plan order, each name cut at 40
+characters (`status_plan.json not loaded (TooManyStages: an item holds at most 5 stages: items
+'Export to CSV' has 6, later[0] 'Plugin API' has 7)`); this one message is never cut to a title's
+line. The cap is the engine's (`plan.MAX_STAGES`): no config raises or disables it. Split longer
+work into items of its own, chained with `after:<key>` (`after` for `other`).
 
 ### A stage: `[name, spec, minutes]`
 

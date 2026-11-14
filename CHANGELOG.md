@@ -123,6 +123,23 @@ merge and the tag row read `from —`, the header `release out —`), and while 
 it, never a `your …` stage of its own, `your go-ahead` or `hold ended`. A `next` or `later` item cannot
 wait on a live job: `after_server` there is refused as a typo, never read in silence.
 
+An item holds at most 5 stages, the engine's rule (`plan.MAX_STAGES`), which no config raises or
+disables: a release item's `before` stages and its build, review and fix when it draws them, an `other`
+item's `stages`, a `next` or `later` item's `before` stages and each of build, review and fix above 0
+minutes. A plan with an item over 5 is not loaded: the last good plan stays, and the title names each
+item over, where it is and its count, in plan order (`status_plan.json not loaded (TooManyStages: an item
+holds at most 5 stages: items 'Export to CSV' has 6, other 'Docs site refresh' has 7)`), each name cut at
+40 characters; that message alone is never cut to a title's line. `lsw-mc validate` reports it as any
+other refusal.
+
+A release item whose build, review and fix are all 0 draws none of them: it is its `before` stages and is
+done when they are (with none, it is done), and its `by_hand` marks nothing. It drew three empty stages
+after its last one and read `queued` there, so a plan had to mark them done by hand to finish it; such
+an item whose last stage has no agent (`null`) now reads `queued` until that stage is marked `{"done":
+"<ISO time>"}` (no stage after it begins). An agent labelled `build:<key>` of such an item no longer
+begins it (an `owner_ok` item's go-ahead) or counts in the release's calibration. An item with any of
+them above 0 draws all three, as before.
+
 Fixed before the first release:
 
 - An Agent SDK session that ended its turn reads as done. Claude Code appends bookkeeping records after a

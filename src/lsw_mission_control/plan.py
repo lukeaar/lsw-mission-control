@@ -1,6 +1,6 @@
 """The plan: what the dashboard tracks (docs/plan-schema.md). It is re-read whenever the file
-changes, with no restart; a plan that will not parse is ignored (the title says why) and the
-last good one stays."""
+changes, with no restart; a plan that will not parse, or has an item of more than MAX_STAGES stages,
+is ignored (the title says why) and the last good one stays."""
 
 from __future__ import annotations
 
@@ -45,7 +45,8 @@ class Held:
 
 @dataclass(frozen=True)
 class Item(Held):
-    """A release item: its `before` stages, then build -> review -> fix, labelled <kind>:<key>."""
+    """A release item: its `before` stages, then build -> review -> fix, labelled <kind>:<key> (none of
+    those three when all three are 0 minutes: `builds`)."""
 
     name: str
     key: str | None
@@ -60,6 +61,12 @@ class Item(Held):
     # stage whose spec is {"done": when} (progress.item_stages)
     by_hand: tuple[tuple[str, float], ...] = ()
     after_server: bool = False  # its first `before` stage mirrors a plugin's live job, as an other item's first stage
+
+    @property
+    def builds(self) -> bool:
+        """It draws build -> review -> fix: one of them has minutes. An item whose three are 0 draws none of
+        them (its `by_hand` marks nothing) and is done when its `before` stages are."""
+        return bool(self.build or self.review or self.fix)
 
 
 @dataclass(frozen=True)
@@ -112,6 +119,11 @@ class Plan:
         """An item's stages before its build ([] for none)."""
         return list(self.pre.get(key, ())) if key is not None else []
 
+    def stages_of(self, item: Item) -> int:
+        """How many stages a release item draws (progress.item_stages): its key's `before` stages, and
+        build, review and fix when it builds (Item.builds). 0 for an item with no key: it is done."""
+        return 0 if item.key is None else len(self.before(item.key)) + (3 if item.builds else 0)
+
     def planned(self) -> list[NextRelease]:
         """The releases after this one, in the order they ship: the next one (if the plan has one),
         then each of `later`."""
@@ -132,6 +144,17 @@ EMPTY_PLAN = Plan("?")
 # load and then fail every frame (1e308 minutes overflow the clock; NaN compares false forever).
 MAX_MINUTES = 1_000_000  # about two years
 MAX_UNITS = 1_000_000  # a detached job's total
+
+# The owner's rule: an item (of the release, of `next`, of each of `later`, and an `other` row) holds at
+# most this many stages, counting its `before`/`stages` and each of build, review and fix it draws. A plan
+# with an item over it is refused, naming each; no config raises or disables it.
+MAX_STAGES = 5
+NAME_CUT = 40  # an item's name in that refusal: cut here, so the title can name every item over
+
+
+class TooManyStages(ValueError):
+    """A plan with an item of more than MAX_STAGES stages. Its message names every one (PlanLoader never
+    cuts it), each name cut at NAME_CUT."""
 
 
 def _number(value, what: str, whole: bool = False) -> float:
@@ -240,7 +263,26 @@ def parse_plan(d: dict, plugins: Sequence[Plugin] = ()) -> Plan:
         # A mark left over from the release before is ignored, never carried into this one.
         by_hand = at if str(fm["release"]) == release else None
     plugin_data = {p.name: p.parse_plan(d) for p in plugins}
-    return Plan(release, tuple(items), tuple(other), nxt, plugin_data, pre, by_hand, later)
+    plan = Plan(release, tuple(items), tuple(other), nxt, plugin_data, pre, by_hand, later)
+    _refuse_too_many_stages(plan)
+    return plan
+
+
+def _refuse_too_many_stages(plan: Plan) -> None:
+    """TooManyStages naming each item of the plan over MAX_STAGES stages, in plan order, and its count:
+    the stages each draws."""
+    rows = [("items", it.name, plan.stages_of(it)) for it in plan.items]
+    rows += [("other", o.name, len(o.stages)) for o in plan.other]
+    planned = ([("next", plan.next)] if plan.next is not None else []) + [
+        (f"later[{i}]", r) for i, r in enumerate(plan.later)]
+    rows += [(where, it.name, len(it.stages)) for where, r in planned for it in r.items]
+    over = [f"{where} {_cut(name)!r} has {n}" for where, name, n in rows if n > MAX_STAGES]
+    if over:
+        raise TooManyStages(f"an item holds at most {MAX_STAGES} stages: " + ", ".join(over))
+
+
+def _cut(name: str) -> str:
+    return name if len(name) <= NAME_CUT else name[:NAME_CUT - 1] + "…"
 
 
 def _until(it: dict, name: str) -> float | None:
@@ -339,7 +381,9 @@ class PlanLoader:
         try:
             plan = parse_plan(json.loads(self.path.read_text()), self.plugins)
         except Exception as e:  # noqa: BLE001 — a bad edit must never take the view down
-            self.note = f"{self.path.name} not loaded ({type(e).__name__}: {e})"[:160]
+            note = f"{self.path.name} not loaded ({type(e).__name__}: {e})"
+            # Cut to a title's line, except the refusal of an item over MAX_STAGES: it names every one.
+            self.note = note if isinstance(e, TooManyStages) else note[:160]
             return self.plan
         self.plan = plan
         self.note = ""

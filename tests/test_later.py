@@ -11,6 +11,7 @@ import re
 
 import pytest
 
+from lsw_mission_control import plan as plan_module
 from lsw_mission_control import testing
 from lsw_mission_control.agents import FinishedStore, label_names
 from lsw_mission_control.config import FinalMergeCfg
@@ -56,6 +57,14 @@ def load(p: Project) -> dict:
 
 LONG = {"key": "long", "name": "Long one", "before": [[f"step {i}", None, 0] for i in range(12)],
         "build": 10, "review": 10, "fix": 10}  # 15 stages: 29 cells of dots
+
+
+@pytest.fixture
+def long_items_load(monkeypatch):
+    """A plan holds no item over plan.MAX_STAGES stages (it is refused: test_stage_cap.py), so LONG loads only
+    with the cap lifted here. The panels' sizing and cutting of a stage column of many dots is the
+    renderer's, which these pin, whatever the cap (the release panel's final merge is sized by config)."""
+    monkeypatch.setattr(plan_module, "MAX_STAGES", 15)
 
 
 def test_each_later_release_is_its_own_panel_right_after_the_next(tmp_path):
@@ -248,6 +257,7 @@ def test_a_begun_later_items_agent_is_at_work(tmp_path):
 
 
 @pytest.mark.parametrize("width", (80, 100))
+@pytest.mark.usefixtures("long_items_load")
 def test_a_later_releases_long_item_leaves_the_next_panel_as_it_was(tmp_path, width):
     """Each planned panel sizes its stage column by its own items. With one width for every planned
     release, a 15-stage item added to 1.6.0 set the 1.5.0 panel's stage column too: at 100 columns
@@ -265,6 +275,7 @@ def test_a_later_releases_long_item_leaves_the_next_panel_as_it_was(tmp_path, wi
 
 @pytest.mark.parametrize("width", (80, 100))
 @pytest.mark.parametrize("where", ("next", "later"))
+@pytest.mark.usefixtures("long_items_load")
 def test_a_long_item_keeps_every_name_and_finish_time_in_its_own_panel(tmp_path, where, width):
     """A 15-stage item in its own panel: at 80 columns its dots are cut ("…") so that every name keeps
     6 cells and every finish time is whole (its 29 cells of dots left the names a column of -7, which
