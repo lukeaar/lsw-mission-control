@@ -140,6 +140,14 @@ an item whose last stage has no agent (`null`) now reads `queued` until that sta
 begins it (an `owner_ok` item's go-ahead) or counts in the release's calibration. An item with any of
 them above 0 draws all three, as before.
 
+Other work in progress lists the heavy jobs at its foot ("compute jobs", `[compute]`, on by default):
+where each runs, what it is, how long it has run, its CPU in cores and its memory, and its progress
+with a finish from the rate it shows. A long job names itself in a descriptor (a JSON file in
+`[compute] descriptors`: its label, what it runs as, the VM whose CPU is its own, how its progress
+counts); every other process group on this computer at `min_cores` (1) or more shows by its
+heaviest command, and each colima or lima VM by its name; a plugin reports its remotes' jobs
+(`Plugin.compute_jobs`, `ComputeJob` in the plugin API). Nothing heavy running draws nothing.
+
 Fixed before the first release:
 
 - An Agent SDK session that ended its turn reads as done. Claude Code appends bookkeeping records after a

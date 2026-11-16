@@ -53,6 +53,12 @@ class StubPlugin(Plugin):
             return None
         return JOBS[self.ctx.state.get("job")]
 
+    def compute_jobs(self, frame):
+        self._fail("compute_jobs")
+        if self._mode() == "bad-compute":
+            return {"remote-a": ["not a job"]}
+        return self.ctx.state.get("compute_jobs")
+
     def side_card(self, width, frame):
         self._fail("side_card")
         if self._mode() == "dict-card":

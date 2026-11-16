@@ -44,6 +44,7 @@ from lsw_mission_control.render.release import release_panel
 from lsw_mission_control.render.side import error_card, repo_grid, side_columns, side_panels
 from lsw_mission_control.render.usage import usage_row
 from lsw_mission_control.render.widgets import panel
+from lsw_mission_control.sources.compute import ComputeBook, ComputeJob, ComputeSource, check_compute_jobs
 from lsw_mission_control.sources.connectivity import ConnectivitySource
 from lsw_mission_control.sources.git import GitSource
 from lsw_mission_control.sources.github import GitHubSource
@@ -85,6 +86,10 @@ class Frame:
     # The agents sessions launched themselves, outside any workflow (agents.scan_session_agents()):
     # Agents at work lists them beside `agents`, and no row reads them.
     session_agents: list[dict] = field(default_factory=list)
+    # The heavy jobs here and on the plugins' remotes (sources/compute.py): Other work in progress
+    # lists them; compute_errors are the descriptors that did not load and a merge that failed.
+    compute: list[ComputeJob] = field(default_factory=list)
+    compute_errors: list[str] = field(default_factory=list)
 
 
 def _overrides(plugin: Plugin, method: str) -> bool:
@@ -158,6 +163,7 @@ class Engine:
         # place): name -> traceback. --once and the reload gate fail on any.
         self.panel_errors: dict[str, str] = {}
         self.sources: list = []
+        self.compute_book = ComputeBook()
 
     # ── sources ───────────────────────────────────────────────────────────────────────────
     def start_sources(self, probe: bool = True) -> None:
@@ -168,6 +174,8 @@ class Engine:
         if cfg.github.repo:
             self.sources.append(GitHubSource(cfg.github, cfg.release, cfg.git.main_branch, self.store,
                                              lambda: self.plans.plan.release))
+        if cfg.compute.enabled:
+            self.sources.append(ComputeSource(cfg.compute, self.store, os.getpid()))
         self.sources.append(TokenCounter(cfg.claude_projects_root, cfg.usage_dir / "tokens.json", self.store))
         if probe and cfg.usage.probe:
             self.sources.append(UsageProbe(cfg.usage_dir, cfg.usage.probe_every_min * 60, cfg.usage.probe_fresh_min * 60,
@@ -189,6 +197,8 @@ class Engine:
         if self.internet_check and self.store.get("online") is None:
             return False
         if self.cfg.github.repo and not self.store.get("gh_polled"):
+            return False
+        if any(isinstance(s, ComputeSource) for s in self.sources) and self.store.get("compute") is None:
             return False
         for p in self.plugins:
             try:
@@ -251,7 +261,23 @@ class Engine:
             f.live_job, f.live_job_error = job, err
         if f.live_job is None and f.live_job_error is None:
             f.live_job_error = self._live_job_load_error()
+        self.compute_rows(f)
         return f
+
+    def compute_rows(self, f: Frame) -> None:
+        reports: dict[str, list[ComputeJob]] = {}
+        for p in self.plugins:
+            if _overrides(p, "compute_jobs"):
+                out, _err = self._plugin_call(f, p, "compute_jobs", f, check=check_compute_jobs)
+                for machine, jobs in (out or {}).items():
+                    reports.setdefault(machine, []).extend(jobs)
+        snap = f.store.get("compute")
+        try:
+            f.compute = self.compute_book.rows(snap, reports, f.now, ended_min=self.cfg.compute.ended_min)
+        except Exception as e:  # noqa: BLE001 — the rows are lost for this frame, never the frame
+            f.compute_errors.append(f"{type(e).__name__}: {e}"[:200])
+            self.plugin_tracebacks.append(f"compute rows: {traceback.format_exc()}")
+        f.compute_errors[:0] = list(getattr(snap, "errors", None) or [])
 
     def session_agents(self, t: float, window: float, skip: set) -> list[dict]:
         """The agents sessions launched themselves (agents.scan_session_agents()), then those in each of

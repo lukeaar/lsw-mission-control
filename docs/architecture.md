@@ -143,6 +143,7 @@ panel in its own place; the rest of the frame draws.
 | `GitHubSource` | `[github] poll_s` 120; timing every 600 | `release_gh`, `gh_timing` | the current plan's release via a callable; a failed call keeps the last answer for the same release |
 | `TokenCounter` | 30 s | `tokens`, `tokens_by_model` | all `~/.claude/projects/**/*.jsonl` of 8 days; `<usage dir>/tokens.json` |
 | `UsageProbe` | 20 min, skipped while usage.json < 15 min old | writes `<usage dir>/usage.json` | `claude -p --model haiku … ok` in `<usage dir>/probe-cwd`, killed at the first `rate_limit_event` or 60 s; never under `--once` |
+| `ComputeSource` | `[compute] poll_s` 10 | `compute` | one `ps -A`; a ComputeSnapshot: the unclaimed local rows (process groups and VMs at `min_cores`), each descriptor's state, the descriptors that did not load; `ComputeBook.rows` merges it with the plugins' `compute_jobs` per frame (`Frame.compute`) |
 | test logs | at render time | — | `test_logs(globs, now, max_age_s, limit)` |
 
 Each runs `poll_once()` in a daemon thread and never dies (an unexpected exception waits for the
@@ -166,6 +167,7 @@ class Plugin:
     side_card(width, frame) -> SideCard | None
     panel(width, frame) -> RenderableType | None
     live_job(frame) -> LiveJob | None
+    compute_jobs(frame) -> {machine: [ComputeJob]} | None
 validate_options(plugin, options, required, optional) -> dict    # unknown or missing key: ConfigError
 load_plugins(cfg, flags) -> (plugins, [(name, "Type: msg")])     # file: spec_from_file_location as
                                                                  # lsw_mc_plugin_<name>, registered in sys.modules
@@ -364,7 +366,8 @@ Panels:
   (after a blank row when a heading was drawn, so it never reads as the last group's own).
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
   live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
-  head and `also in motion`.
+  head, `compute jobs` (descriptors' jobs, running, waiting and ended; local groups and VMs; plugin
+  rows, stale ones `read Nm ago`; at 80, 100, 120 and 160 columns) and `also in motion`.
 - The side row: plugin cards, then Repository.
 - Agents at work and the recent test suites: workflow agents, and beside them the agents a session
   launched itself (`<session>/subagents/agent-<id>.jsonl` with its `.meta.json`: its description, its

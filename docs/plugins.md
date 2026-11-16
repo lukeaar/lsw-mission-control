@@ -41,11 +41,14 @@ class Plugin:
     def side_card(self, width, frame) -> SideCard | None
     def panel(self, width, frame) -> RenderableType | None
     def live_job(self, frame) -> LiveJob | None   # None: unknown (not answered yet, or switched off)
+    def compute_jobs(self, frame) -> dict[str, list[ComputeJob]] | None   # {remote: its heavy jobs}
 
 PluginContext: name, options, cfg, flags (flags.has("--no-queue")), state (a thread-safe Store),
                root, cache_dir, run(*cmd, timeout, input_, cwd), spawn(fn, name), write_json(path, data), now()
 SideCard(title, grid, subtitle="", subtitle_style=None)     # grid: render.side.card_grid() + add_row(label, value)
 LiveJob(left, frac, eta, eta_life, live, stalled_label="stalled")
+ComputeJob(machine, label, started=None, cores=None, mem=None, done=None, total=None, detail="", names=(),
+           eta=None, as_of=None, waiting=False, ended=None, key="")   # one row of "compute jobs"
 validate_options(plugin, options, required={key: type}, optional={key: (type, default)}) -> dict
 ```
 
@@ -67,9 +70,15 @@ validate_options(plugin, options, required={key: type}, optional={key: (type, de
   gate refuses an edit that causes one. A `live_job` failure also turns the rows that wait on it
   red ("plugin error"), never "not reached yet". A plugin that fails to load (import error, bad
   options) shows an error card, and fails `--check-net`.
+- **Compute jobs** ([config.md](config.md#compute-jobs)): `compute_jobs` reports the heavy jobs on
+  the remotes the plugin reads, as `{machine: [ComputeJob, ...]}` (an empty list: it answered and
+  none runs; a machine left out, or `None`, is unknown). Give each its `started` (epoch s),
+  `cores`, `mem` (bytes), `done`/`total` when its progress is known (the engine works out the
+  finish from the rate, unless `eta` is set), the container `names` it covers (a remote descriptor
+  matches them) and `as_of`, when it was read. A result of the wrong type is the plugin's error.
 - **Put outside text in `Text(...)`.** A plain `str` cell is read as rich markup: a host's error
   message with `[/…]` in it fails the card, and `[b]` silently vanishes. `Text(s)` draws `s` as is.
-- **Render methods must not block.** `side_card`, `panel` and `live_job` run on the main loop at
+- **Render methods must not block.** `side_card`, `panel`, `live_job` and `compute_jobs` run on the main loop at
   every refresh (every 5 s, and on every key): read `ctx.state`, never the network or a slow file.
   Polling belongs in the thread `start()` spawns.
 - A live job's `left == 0` marks the waiting row's first stage done; otherwise `frac` counts as

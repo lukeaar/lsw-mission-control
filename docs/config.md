@@ -56,6 +56,12 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[agents] extra_dirs` | [str] | `[]` | more folders laid out as a projects folder (`<run>/subagents/agent-<id>.jsonl` beside `agent-<id>.meta.json`, `{"agentType", "description"}`): agents a job launches outside Claude Code, such as Agent SDK passes billed to the API, listed in Agents at work with a session's own |
 | `[test_logs] globs` | [str] | `["{scratch}/*/scratchpad/*.log"]` | `{scratch}` and `{root}` are filled in (no other `{…}`) |
 | `[test_logs] max_age_h` / `limit` | num / int | `2` / `4` | |
+| `[compute] enabled` | bool | `true` | the heavy jobs at the foot of Other work in progress ("compute jobs"; below) |
+| `[compute] descriptors` | str | none | the folder long jobs write their descriptors (`*.json`, below) into; `~` and relative paths as `[files]` |
+| `[compute] min_cores` | num | `1` | a process group (or VM) no descriptor names is listed from this much CPU |
+| `[compute] exclude` | [str] | `[]` | more command substrings that are never a job (beside the system's programs, desktop apps, editors, `claude` and every mission-control window) |
+| `[compute] poll_s` / `ended_min` | int / num | `10` / `10` | how often `ps` is sampled (at least 2); how long a descriptor's job that ended reads `ended HH:MM` |
+| `[compute] local_name` | str | `"here"` | what this computer's rows say they run on |
 | `[usage] probe` | bool | `true` | the plan-limit probe (the CLI flag `--no-usage-probe` also stops it) |
 | `[usage] probe_every_min` / `probe_fresh_min` | num | `20` / `15` | its period (at least 5), and the age below which a round is skipped; data older than `every + 5` min shows as stale |
 | `[usage] probe_model` | str | `"haiku"` | |
@@ -117,3 +123,37 @@ class = "QueuePlugin"
 host = "build-box"
 poll_s = 60
 ```
+
+## Compute jobs
+
+Every `[compute] poll_s` the dashboard samples `ps` and lists, under Other work in progress, where each
+heavy job runs, what it is, how long it has run, its CPU (in cores, from its CPU time's growth) and
+memory, and, when its progress is known, `done/total` with a finish from the rate it shows (over the
+last 3 h of this session, else since it started). The rows:
+
+- each **descriptor** in `[compute] descriptors`: a JSON file a long job writes when it starts (and
+  removes when it is done; one whose job has gone stops showing, after `ended HH:MM` when this
+  session saw it run):
+
+  ```json
+  {"label": "Nightly data import",       "machine": "local",
+   "match": {"pgid": 4242},               "vm": "work",
+   "progress": {"file": "~/jobs/nightly/state.log", "regex": "units=(\\d+)/(\\d+)", "fresh_min": 15},
+   "total": 174, "started": "2026-09-21T10:00:00Z", "detail": "pass 2"}
+  ```
+
+  `label` is required. `machine` is `local` (the default) or a remote a plugin reports. `match`, on
+  this computer: `pid`, `pgid` or `pidfile` (a number, a list, or a file holding the pid): the job
+  shows while one runs, and their processes (a pid's descendants, a group's members) are its CPU;
+  on a remote: `container` (names) or `container_prefix`, matched against the names the plugin's
+  rows carry, plus optionally a local `pid`/`pgid` of the job's driver, so that it reads `waiting`
+  while the driver runs and nothing of it does there. `vm`: a colima profile (or `lima <name>`)
+  whose VM's CPU and memory are this job's (it then has no row of its own). `progress`, from a
+  local file: `{"file", "count": "lines", "match"}` (lines, those holding `match`), `{"glob"}`
+  (files), `{"file", "field": "a.b", "total_field"}` (JSON numbers) or `{"file", "regex"}` (the
+  last match in its end: group 1 done, group 2 the total), each with `fresh_min` (an older file is
+  no progress) and `total`. A file that does not load shows as `not read: <file>: <why>`.
+- every other **process group** on this computer at `min_cores` or more, by its heaviest command,
+  and each **VM** (macOS's Virtualization framework: colima and lima, named by their instance);
+- each **plugin's remote jobs** (`Plugin.compute_jobs`, [plugins.md](plugins.md)), with a remote
+  descriptor's label when one names them, and `read Nm ago` once their answer is 5 min old.

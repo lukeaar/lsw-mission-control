@@ -1,0 +1,21 @@
+╭─  Other work in progress  ───────────────────────────────────────────────────────────────────────────────────────────╮
+│ 3 in progress  ·  1 paused  ·  next to finish: Docs site refresh  14:53                                              │
+│                                                                                                                      │
+│ item                                    stages       stage            progress                                   eta │
+│ Nightly data import · 1,200 files        ◉─○         import           ━━━━━━━━━━━━━━━━━━━━━  55%       ~2h30 · 16:43 │
+│ Docs site refresh                        ◉─○         draft            ━━━━━━━━━━━━━━━━━━━━━  50%        ~40m · 14:53 │
+│ Dependency upgrades                      ◉─○         paused           ━━━━━━━━━━━━━━━━━━━━━  46%                   — │
+│ Benchmarks after upgrades                 ○          after docs       ━━━━━━━━━━━━━━━━━━━━━   0%       ~1h20 · 15:33 │
+│                                                                                                                      │
+│ compute jobs   laptop 7.1 cores · buildbox 4.8 cores                                                                 │
+│ laptop    Nightly data import                          5h00  3.9 cores · 2.6 GB  ━━━━━━━━ 40/174  ~16h45 · Tue 06:58 │
+│ laptop    VM colima                                    6h00  2.0 cores · 4.0 GB                                      │
+│ laptop    python -m pytest -q tests                     12m  1.2 cores · 0.6 GB                                      │
+│ buildbox  Render farm pass · render pass 7 · stage 6   3h00  4.0 cores · 2.4 GB  ━━━━━━━━ 5/156   ~3d18h · Fri 08:49 │
+│ buildbox  Weekly rebuild · waiting                                            —                                      │
+│ buildbox  transcode · read 10m ago                     1h00  0.8 cores · 0.3 GB                                      │
+│ not read: broken.json: no label                                                                                      │
+│                                                                                                                      │
+│ also in motion                                                                                                       │
+│ ◌ Log rotation on the build box (a one-off, no plan row)                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

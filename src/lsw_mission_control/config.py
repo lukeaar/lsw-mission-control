@@ -109,6 +109,19 @@ class TestLogsCfg:
 
 
 @dataclass(frozen=True)
+class ComputeCfg:
+    """[compute]: the heavy jobs Other work in progress lists (sources/compute.py)."""
+
+    enabled: bool = True
+    descriptors: Path | None = None  # the folder long jobs write their descriptors into
+    min_cores: float = 1.0  # a process group (or VM) no descriptor names shows from this much CPU
+    exclude: tuple[str, ...] = ()  # more command substrings that are never a job
+    poll_s: int = 10
+    local_name: str = "here"  # what this computer's rows say they run on
+    ended_min: float = 10  # how long a descriptor's job that ended shows `ended`
+
+
+@dataclass(frozen=True)
 class CreditsCfg:
     """A prepaid credit balance shown under the plan limits ([usage.credits]): what the project's own jobs
     record spending (each spend file a JSON object with `total_cost_usd`, as the Agent SDK's result and
@@ -198,6 +211,7 @@ class Config:
     theme: Theme
     compat: CompatCfg
     plugins: tuple[PluginSpec, ...]
+    compute: ComputeCfg = ComputeCfg()
 
 
 # ── validation helpers ────────────────────────────────────────────────────────────────────
@@ -283,7 +297,7 @@ def parse_logo_path(path: str) -> tuple:
 
 
 # ── loading ───────────────────────────────────────────────────────────────────────────────
-_TOP = {"schema", "project", "files", "cache", "git", "github", "release", "plan", "agents", "test_logs", "usage",
+_TOP = {"schema", "project", "files", "cache", "git", "github", "release", "plan", "agents", "test_logs", "compute", "usage",
         "network", "layout", "logo", "theme", "compat", "plugins"}
 
 
@@ -470,6 +484,15 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
     network = NetworkCfg(_strs(n, "[network]", "tools", ()), {k: tuple(v) for k, v in subs.items()}, tuple(cases),
                          _strs(n, "[network]", "dashboard_markers", ()), _get(n, "[network]", "check_internet", bool, True))
 
+    cp = _table(raw, "compute", {"enabled", "descriptors", "min_cores", "exclude", "poll_s", "local_name", "ended_min"})
+    desc_dir = _get(cp, "[compute]", "descriptors", str, "")
+    compute = ComputeCfg(bool(_get(cp, "[compute]", "enabled", bool, True)), _path(base, desc_dir) if desc_dir else None,
+                         float(_get(cp, "[compute]", "min_cores", (int, float), 1.0)), _strs(cp, "[compute]", "exclude", ()),
+                         _at_least(_get(cp, "[compute]", "poll_s", int, 10), "[compute].poll_s", 2),
+                         _get(cp, "[compute]", "local_name", str, "here") or "here",
+                         float(_get(cp, "[compute]", "ended_min", (int, float), 10)))
+    if compute.min_cores <= 0 or compute.ended_min < 0:
+        raise ConfigError("[compute].min_cores must be more than 0, and ended_min 0 or more")
     lay = _table(raw, "layout", {"max_width", "panels"})
     panels = _strs(lay, "[layout]", "panels", DEFAULT_PANELS)
     for pan in panels:
@@ -541,7 +564,7 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
         notes_file=_path(base, _get(f, "[files]", "notes", str, "status_notes.json")),
         cache_dir=cache, usage_dir=usage_dir(), git=git, github=github, release=release, after_server=after_server,
         agents=agents, test_logs=test_logs, usage=usage, network=network, layout=layout, logo=logo, theme=theme,
-        compat=compat, plugins=tuple(plugins))
+        compat=compat, plugins=tuple(plugins), compute=compute)
 
 
 def find_config(*, config: str | None = None, launcher: str | None = None, project: str | None = None,

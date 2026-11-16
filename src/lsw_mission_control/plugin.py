@@ -20,6 +20,7 @@ from rich.console import RenderableType
 from rich.table import Table
 
 from lsw_mission_control.config import Config, ConfigError, PluginSpec, _kind_name
+from lsw_mission_control.sources.compute import ComputeJob
 from lsw_mission_control.store import Store
 from lsw_mission_control.util import now as _now
 from lsw_mission_control.util import run as _run
@@ -28,7 +29,7 @@ from lsw_mission_control.util import write_json as _write_json
 if TYPE_CHECKING:
     from lsw_mission_control.engine import Frame
 
-__all__ = ["CliFlag", "ConfigError", "Flags", "LiveJob", "Plugin", "PluginContext", "SideCard", "Store",
+__all__ = ["CliFlag", "ComputeJob", "ConfigError", "Flags", "LiveJob", "Plugin", "PluginContext", "SideCard", "Store",
            "validate_options"]
 
 
@@ -135,6 +136,12 @@ class Plugin:
 
     def live_job(self, frame: Frame) -> LiveJob | None:
         """None: unknown (never answered, or switched off)."""
+        return None
+
+    def compute_jobs(self, frame: Frame) -> dict[str, list[ComputeJob]] | None:
+        """The heavy jobs on the remotes this plugin reads, {machine: [ComputeJob, ...]}, for Other
+        work in progress: a machine with an empty list answered and runs none. None: it knows nothing
+        (a machine left out is unknown, so a descriptor's job there never reads as waiting)."""
         return None
 
 
