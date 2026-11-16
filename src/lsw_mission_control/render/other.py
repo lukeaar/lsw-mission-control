@@ -8,7 +8,6 @@ from rich.console import Group
 from rich.text import Text
 
 from lsw_mission_control.progress import Prog, in_wait_order, live_job_progress, short_name, stages_progress
-from lsw_mission_control.render.compute import compute_section
 from lsw_mission_control.render.widgets import pack, panel, work_row, work_table
 from lsw_mission_control.theme import C
 from lsw_mission_control.util import clock, now
@@ -73,7 +72,8 @@ def other_panel(f: Frame, width: int):
         soonest = min(timed, key=lambda r: (r[1].remaining, r[1].waits))
         phrases.append(Text.assemble(("next to finish: ", C.MUTED), (soonest[0], C.TEXT),
                                      (f"  {clock(t_now + soonest[1].remaining)}", f"bold {C.TEXT}")))
-    parts = [pack(phrases, width - 4), Text(""), t, *compute_section(f, width - 4)]
+    # The table only when it has rows: an empty one was a header over nothing.
+    parts = [pack(phrases, width - 4), Text(""), t] if rows else [Text("nothing in progress", style=C.MUTED)]
     also = list(f.notes.in_progress_elsewhere)
     if also:
         parts.append(Text(""))

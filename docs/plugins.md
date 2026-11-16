@@ -48,7 +48,7 @@ PluginContext: name, options, cfg, flags (flags.has("--no-queue")), state (a thr
 SideCard(title, grid, subtitle="", subtitle_style=None)     # grid: render.side.card_grid() + add_row(label, value)
 LiveJob(left, frac, eta, eta_life, live, stalled_label="stalled")
 ComputeJob(machine, label, started=None, cores=None, mem=None, done=None, total=None, detail="", names=(),
-           eta=None, as_of=None, waiting=False, ended=None, key="")   # one row of "compute jobs"
+           eta=None, as_of=None, waiting=False, ended=None, key="", state="", unit="")   # one row of Compute
 validate_options(plugin, options, required={key: type}, optional={key: (type, default)}) -> dict
 ```
 
@@ -75,7 +75,9 @@ validate_options(plugin, options, required={key: type}, optional={key: (type, de
   none runs; a machine left out, or `None`, is unknown). Give each its `started` (epoch s),
   `cores`, `mem` (bytes), `done`/`total` when its progress is known (the engine works out the
   finish from the rate, unless `eta` is set), the container `names` it covers (a remote descriptor
-  matches them) and `as_of`, when it was read. A result of the wrong type is the plugin's error.
+  matches them) and `as_of`, when it was read; `unit`, what its progress counts, and `state`, what
+  it is doing when that is not plainly running (`"waiting (memory)"`: amber, with no finish). A
+  result of the wrong type is the plugin's error.
 - **Put outside text in `Text(...)`.** A plain `str` cell is read as rich markup: a host's error
   message with `[/…]` in it fails the card, and `[b]` silently vanishes. `Text(s)` draws `s` as is.
 - **Render methods must not block.** `side_card`, `panel`, `live_job` and `compute_jobs` run on the main loop at

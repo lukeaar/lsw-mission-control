@@ -1,0 +1,13 @@
+╭─  Compute  ──────────────────────────────────────────────────────────────────╮
+│ machine   job             state      done  progress                      eta │
+│ laptop    Nightly data…   running  40/174  ━━━━━━━━  23%  ~16h45 · Tue 06:58 │
+│           OCR queue…      frozen    15/88  ━━━━━━━━  17%                   — │
+│           VM colima       running                                          — │
+│           python -m…      running                                          — │
+│ buildbox  Render farm…    running   5/156  ━━━━━━━━   3%  ~3d18h · Fri 08:49 │
+│           Weekly rebuild  waiting                                          — │
+│           transcode       10m ago                                          — │
+│           encode 4        waiting    3/12  ━━━━━━━━  25%                   — │
+│                                                                              │
+│ not read: broken.json: no label                                              │
+╰─────────────────────────────────────────── 5 running · 1 frozen · 2 waiting ─╯

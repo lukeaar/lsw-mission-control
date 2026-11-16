@@ -18,7 +18,7 @@ from lsw_mission_control.theme import Theme, theme_from
 
 SCHEMA = 1
 CONFIG_NAME = "mission-control.toml"
-DEFAULT_PANELS = ("notes", "release", "next", "other", "side", "agents", "usage")
+DEFAULT_PANELS = ("notes", "release", "next", "other", "compute", "side", "agents", "usage")
 KNOWN_PANELS = frozenset(DEFAULT_PANELS)
 # The LSW logo, in its own 150x150 units: a stroke up, then three arches.
 DEFAULT_LOGO_PATH = "M17 105 L57 25 Q71 65 85 105 Q97 145 109 105 Q121 65 133 105"
@@ -110,14 +110,14 @@ class TestLogsCfg:
 
 @dataclass(frozen=True)
 class ComputeCfg:
-    """[compute]: the heavy jobs Other work in progress lists (sources/compute.py)."""
+    """[compute]: the heavy jobs the Compute panel lists (sources/compute.py)."""
 
     enabled: bool = True
     descriptors: Path | None = None  # the folder long jobs write their descriptors into
     min_cores: float = 1.0  # a process group (or VM) no descriptor names shows from this much CPU
     exclude: tuple[str, ...] = ()  # more command substrings that are never a job
     poll_s: int = 10
-    local_name: str = "here"  # what this computer's rows say they run on
+    local_name: str = "this computer"  # what this computer's rows say they run on
     ended_min: float = 10  # how long a descriptor's job that ended shows `ended`
 
 
@@ -489,7 +489,7 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
     compute = ComputeCfg(bool(_get(cp, "[compute]", "enabled", bool, True)), _path(base, desc_dir) if desc_dir else None,
                          float(_get(cp, "[compute]", "min_cores", (int, float), 1.0)), _strs(cp, "[compute]", "exclude", ()),
                          _at_least(_get(cp, "[compute]", "poll_s", int, 10), "[compute].poll_s", 2),
-                         _get(cp, "[compute]", "local_name", str, "here") or "here",
+                         _get(cp, "[compute]", "local_name", str, "this computer") or "this computer",
                          float(_get(cp, "[compute]", "ended_min", (int, float), 10)))
     if compute.min_cores <= 0 or compute.ended_min < 0:
         raise ConfigError("[compute].min_cores must be more than 0, and ended_min 0 or more")
@@ -498,6 +498,11 @@ def config_from(raw: dict, path: Path, cache_dir: Path | str | None = None) -> C
     for pan in panels:
         if pan not in KNOWN_PANELS and not pan.startswith("plugin:"):
             raise ConfigError(f"[layout].panels: unknown panel {pan!r}")
+    if "compute" not in panels and "other" in panels:
+        # A list from before the Compute panel: its jobs were at Other work in progress's foot, and
+        # stay where they were, right after it.
+        i = panels.index("other") + 1
+        panels = (*panels[:i], "compute", *panels[i:])
     layout = LayoutCfg(_at_least(_get(lay, "[layout]", "max_width", int, 150), "[layout].max_width", 60), panels)
 
     lg = _table(raw, "logo", {"enabled", "path", "viewbox", "split_x", "colours", "caption", "caption_style"})

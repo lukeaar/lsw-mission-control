@@ -366,8 +366,9 @@ Panels:
   (after a blank row when a heading was drawn, so it never reads as the last group's own).
 - Other work in progress, with `after` (the same waits), `after_server` (unknown, done, running, not
   live, stalled, plugin error), paused rows (the bar filled with the work done in muted grey), the
-  head, `compute jobs` (descriptors' jobs, running, waiting and ended; local groups and VMs; plugin
-  rows, stale ones `read Nm ago`; at 80, 100, 120 and 160 columns) and `also in motion`.
+  head, an empty plan's one line, and `also in motion`.
+- Compute: descriptors' jobs (running, waiting, a named state, ended), local groups and VMs, plugin
+  rows (stale ones `read Nm ago`), at 80, 100, 120 and 160 columns.
 - The side row: plugin cards, then Repository.
 - Agents at work and the recent test suites: workflow agents, and beside them the agents a session
   launched itself (`<session>/subagents/agent-<id>.jsonl` with its `.meta.json`: its description, its

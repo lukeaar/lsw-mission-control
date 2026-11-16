@@ -1,0 +1,13 @@
+╭─  Compute  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ machine   job                               state             running  cores         done  progress                                                      eta │
+│ laptop    Nightly data import               running              5h00    3.9       40/174  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  23%  ~16h45 · Tue 06:58 │
+│           OCR queue: combined read          frozen (battery)     6h00    4.0  15/88 reads  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  17%                   — │
+│           VM colima                         running              6h00    2.0                                                                               — │
+│           python -m pytest -q tests         running               12m    1.2                                                                               — │
+│ buildbox  Render farm pass · render pass…   running              3h00    4.0  5/156 reads  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   3%  ~3d18h · Fri 08:49 │
+│           Weekly rebuild                    waiting                        —                                                                               — │
+│           transcode                         read 10m ago         1h00    0.8                                                                               — │
+│           encode 4                          waiting (memory)     2h00      —   3/12 clips  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  25%                   — │
+│                                                                                                                                                              │
+│ not read: broken.json: no label                                                                                                                              │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 5 running · 1 frozen · 2 waiting ─╯

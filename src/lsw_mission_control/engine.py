@@ -34,6 +34,7 @@ from lsw_mission_control.plan import Plan, PlanLoader
 from lsw_mission_control.plugin import Flags, LiveJob, Plugin, SideCard, load_plugins
 from lsw_mission_control.progress import Calibration, calibrate
 from lsw_mission_control.render.agents import agents_panel
+from lsw_mission_control.render.compute import compute_panel
 from lsw_mission_control.render.frame import bottom_line, title_line
 from lsw_mission_control.render.guard import Guarded
 from lsw_mission_control.render.logo import LogoAnimator
@@ -86,7 +87,7 @@ class Frame:
     # The agents sessions launched themselves, outside any workflow (agents.scan_session_agents()):
     # Agents at work lists them beside `agents`, and no row reads them.
     session_agents: list[dict] = field(default_factory=list)
-    # The heavy jobs here and on the plugins' remotes (sources/compute.py): Other work in progress
+    # The heavy jobs here and on the plugins' remotes (sources/compute.py): the Compute panel
     # lists them; compute_errors are the descriptors that did not load and a merge that failed.
     compute: list[ComputeJob] = field(default_factory=list)
     compute_errors: list[str] = field(default_factory=list)
@@ -387,6 +388,8 @@ class Engine:
                 body = self._build(name, notes_panel, f.notes, f.notes_note)
             elif name == "other":
                 body = self._build(name, other_panel, f, width)
+            elif name == "compute":
+                body = self._build(name, compute_panel, f, width) if cfg.compute.enabled else None
             elif name == "side":
                 body = self._build(name, self.side_row, f, width)
             elif name == "agents":

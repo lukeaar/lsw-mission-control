@@ -56,12 +56,12 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[agents] extra_dirs` | [str] | `[]` | more folders laid out as a projects folder (`<run>/subagents/agent-<id>.jsonl` beside `agent-<id>.meta.json`, `{"agentType", "description"}`): agents a job launches outside Claude Code, such as Agent SDK passes billed to the API, listed in Agents at work with a session's own |
 | `[test_logs] globs` | [str] | `["{scratch}/*/scratchpad/*.log"]` | `{scratch}` and `{root}` are filled in (no other `{…}`) |
 | `[test_logs] max_age_h` / `limit` | num / int | `2` / `4` | |
-| `[compute] enabled` | bool | `true` | the heavy jobs at the foot of Other work in progress ("compute jobs"; below) |
+| `[compute] enabled` | bool | `true` | the Compute panel: the heavy jobs here and on the plugins' remotes (below) |
 | `[compute] descriptors` | str | none | the folder long jobs write their descriptors (`*.json`, below) into; `~` and relative paths as `[files]` |
 | `[compute] min_cores` | num | `1` | a process group (or VM) no descriptor names is listed from this much CPU |
 | `[compute] exclude` | [str] | `[]` | more command substrings that are never a job (beside the system's programs, desktop apps, editors, `claude` and every mission-control window) |
 | `[compute] poll_s` / `ended_min` | int / num | `10` / `10` | how often `ps` is sampled (at least 2); how long a descriptor's job that ended reads `ended HH:MM` |
-| `[compute] local_name` | str | `"here"` | what this computer's rows say they run on |
+| `[compute] local_name` | str | `"this computer"` | what this computer's rows say they run on (`"this Mac"`, its host name) |
 | `[usage] probe` | bool | `true` | the plan-limit probe (the CLI flag `--no-usage-probe` also stops it) |
 | `[usage] probe_every_min` / `probe_fresh_min` | num | `20` / `15` | its period (at least 5), and the age below which a round is skipped; data older than `every + 5` min shows as stale |
 | `[usage] probe_model` | str | `"haiku"` | |
@@ -74,7 +74,7 @@ TOML, hand-edited, with comments. The engine finds it beside the launcher (`--la
 | `[network] dashboard_markers` | [str] | `[]` | more command-line substrings that mark a dashboard process |
 | `[network] check_internet` | bool | `true` | the indicator's "not connected" state: a request to `http://captive.apple.com/hotspot-detect.html` every 5 s from the dashboard's own process (README, "The network indicator"); `false`: none |
 | `[layout] max_width` | int | `150` | every panel shares one right edge at most this far (at least 60) |
-| `[layout] panels` | [str] | `["notes","release","next","other","side","agents","usage"]` | order and choice; `plugin:<name>` places a plugin's full-width panel (a `[[plugins]]` name); `usage` must stay last while the logo is on |
+| `[layout] panels` | [str] | `["notes","release","next","other","compute","side","agents","usage"]` | order and choice; `plugin:<name>` places a plugin's full-width panel (a `[[plugins]]` name); `usage` must stay last while the logo is on; a list that names `other` but not `compute` draws Compute right after Other work in progress |
 | `[logo] enabled` | bool | `true` | the logo beside Model usage, in the room Model usage leaves (it never clips it) |
 | `[logo] path` | str | the LSW logo | an SVG path with absolute `M`, `L` and `Q` commands only |
 | `[logo] viewbox` | num | `150` | the path's square box (its points must lie inside) |
@@ -126,10 +126,17 @@ poll_s = 60
 
 ## Compute jobs
 
-Every `[compute] poll_s` the dashboard samples `ps` and lists, under Other work in progress, where each
-heavy job runs, what it is, how long it has run, its CPU (in cores, from its CPU time's growth) and
-memory, and, when its progress is known, `done/total` with a finish from the rate it shows (over the
-last 3 h of this session, else since it started). The rows:
+Every `[compute] poll_s` the dashboard samples `ps`, and the Compute panel lists, one row each, where
+each heavy job runs (`machine`, named once for its rows), what it is (`job`: its label, then its
+detail dimmed where there is room, cut at a word), its `state` (`running`; `waiting`; a state its
+source names, such as `frozen (battery)` or `waiting (memory)`, in amber; `ended HH:MM`; `read Nm
+ago` once a remote's answer is 5 min old), how long it has run, its CPU (`cores`, from its CPU
+time's growth) and `memory`, and, when its progress is known, `done/total` (headed by what it counts
+when every row counts the same thing), the release panel's bar with the share done, and a finish
+from the rate it shows (over the last 3 h of this session, else since it started); a job that is
+not running has no finish (`—`). The progress and eta columns are the release table's, at the same
+width and place. In a narrow window the detail goes first, then memory, running and cores. The
+panel's foot counts the rows by state. Nothing heavy running draws no panel. The rows:
 
 - each **descriptor** in `[compute] descriptors`: a JSON file a long job writes when it starts (and
   removes when it is done; one whose job has gone stops showing, after `ended HH:MM` when this
@@ -139,7 +146,8 @@ last 3 h of this session, else since it started). The rows:
   {"label": "Nightly data import",       "machine": "local",
    "match": {"pgid": 4242},               "vm": "work",
    "progress": {"file": "~/jobs/nightly/state.log", "regex": "units=(\\d+)/(\\d+)", "fresh_min": 15},
-   "total": 174, "started": "2026-09-21T10:00:00Z", "detail": "pass 2"}
+   "total": 174, "unit": "files", "started": "2026-09-21T10:00:00Z", "detail": "pass 2",
+   "state": {"file": "~/jobs/nightly/pause.log", "when": {"froze": "frozen (battery)", "thawed": ""}}}
   ```
 
   `label` is required. `machine` is `local` (the default) or a remote a plugin reports. `match`, on
@@ -152,8 +160,11 @@ last 3 h of this session, else since it started). The rows:
   local file: `{"file", "count": "lines", "match"}` (lines, those holding `match`), `{"glob"}`
   (files), `{"file", "field": "a.b", "total_field"}` (JSON numbers) or `{"file", "regex"}` (the
   last match in its end: group 1 done, group 2 the total), each with `fresh_min` (an older file is
-  no progress) and `total`. A file that does not load shows as `not read: <file>: <why>`.
+  no progress, unless its `state` says it is not running) and `total`. `unit`: what its progress
+  counts. `state`: the last line in the end of `file` that holds one of `when`'s substrings gives
+  that substring's state (`""`: running); no such line, or no file, is running. A file that does
+  not load shows as `not read: <file>: <why>`.
 - every other **process group** on this computer at `min_cores` or more, by its heaviest command,
   and each **VM** (macOS's Virtualization framework: colima and lima, named by their instance);
 - each **plugin's remote jobs** (`Plugin.compute_jobs`, [plugins.md](plugins.md)), with a remote
-  descriptor's label when one names them, and `read Nm ago` once their answer is 5 min old.
+  descriptor's label when one names them (and its `unit` and `state`, before the plugin's).

@@ -1,5 +1,5 @@
 """Compute jobs (sources/compute.py, render/compute.py): ps parsing, the CPU meter, descriptors,
-VMs, plugin rows, ETAs, and the rows at the foot of Other work in progress."""
+VMs, plugin rows, states, ETAs, and the Compute panel."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import pytest
 
 from lsw_mission_control import testing
 from lsw_mission_control.config import ConfigError
+from lsw_mission_control.render.compute import compute_panel, cut_words
 from lsw_mission_control.render.other import other_panel
 from lsw_mission_control.sources.compute import (
     ComputeBook,
@@ -26,6 +27,7 @@ from lsw_mission_control.sources.compute import (
     parse_descriptor,
     parse_ps,
     read_progress,
+    read_state,
     sample,
     short_command,
     vm_names,
@@ -137,6 +139,45 @@ def test_descriptors_load_and_say_why_not(tmp_path):
     assert parse_descriptor("v", {"label": "V", "vm": "default"}).vm == "colima"
     with pytest.raises(ValueError):
         parse_descriptor("p", {"label": "P", "match": {"pid": "12"}})
+    d = parse_descriptor("s", {"label": "S", "match": {"pid": 1}, "unit": " files ",
+                               "state": {"file": "~/x.log", "when": {"froze": "frozen (battery)", "thawed": ""}}})
+    assert d.unit == "files" and d.state["when"]["froze"] == "frozen (battery)"
+    for bad in ({"state": {"file": "x"}}, {"state": {"file": "x", "when": {}}}, {"state": {"when": {"a": "b"}}},
+                {"state": {"file": "x", "when": {"a": 1}}}, {"unit": 3}):
+        with pytest.raises(ValueError):
+            parse_descriptor("b", {"label": "B", "match": {"pid": 1}, **bad})
+
+
+def test_a_state_source_reads_the_last_line_that_names_one(tmp_path):
+    log = tmp_path / "pause.log"
+    when = {"froze": "frozen (battery)", "thawed": ""}
+    spec = {"file": str(log), "when": when}
+    assert read_state(spec) == "", "no file: running"
+    log.write_text("start (pid 1)\n")
+    assert read_state(spec) == "", "no line names one: running"
+    log.write_text("start (pid 1)\non battery: froze unit x\nsomething else\n")
+    assert read_state(spec) == "frozen (battery)"
+    log.write_text("on battery: froze unit x\non mains power: thawed unit x\n")
+    assert read_state(spec) == ""
+    log.write_text("stopping while frozen: thawed: ok\n")
+    assert read_state({"file": str(log), "when": {"frozen": "frozen", "thawed": ""}}) == "", "the one said last"
+
+
+def test_a_job_that_is_not_running_keeps_its_last_progress(tmp_path):
+    beat = tmp_path / "liveness.txt"
+    beat.write_text("t units=15/88\n")
+    os.utime(beat, (NOW - 3600, NOW - 3600))
+    pause = tmp_path / "pause.log"
+    prog = {"file": str(beat), "regex": r"units=(\d+)/(\d+)", "fresh_min": 15}
+    d = Descriptor("q", "OCR pass", pgids=(8000,), progress=prog, unit="reads",
+                   state={"file": str(pause), "when": {"froze": "frozen (battery)", "thawed": ""}})
+    _rows, (st,) = sample(procs(), [d], t=NOW, min_cores=1.0, homes=homes(tmp_path))
+    assert (st.state, st.done) == ("", None), "running, with an hour-old file: no progress"
+    pause.write_text("on battery: froze unit q\n")
+    _rows, (st,) = sample(procs(), [d], t=NOW, min_cores=1.0, homes=homes(tmp_path))
+    assert (st.state, st.done, st.total) == ("frozen (battery)", 15, 88)
+    (row,) = [r for r in ComputeBook().rows(ComputeSnapshot(NOW, descs=[st]), {}, NOW) if r.key == "desc:q"]
+    assert (row.state, row.unit) == ("frozen (battery)", "reads")
 
 
 def test_progress_kinds(tmp_path):
@@ -204,11 +245,11 @@ def test_rows_merge_descriptors_plugins_and_rates():
     assert list(by) == [("local", "Nightly data import", ""), ("local", "VM colima", ""),
                         ("local", "python -m pytest -q tests", ""),
                         ("buildbox", "Render farm pass", "render pass 7 · stage 6"),
-                        ("buildbox", "Weekly rebuild", "waiting"), ("buildbox", "transcode", "")]
+                        ("buildbox", "Weekly rebuild", ""), ("buildbox", "transcode", "")]
     # no samples yet: the whole run's rate (40 in 5 h: 134 left at 8 an hour)
     assert by["local", "Nightly data import", ""].eta == pytest.approx(134 / 8 * HOUR)
     assert by["buildbox", "Render farm pass", "render pass 7 · stage 6"].eta == pytest.approx(151 / (5 / (3 * HOUR)))
-    assert by["buildbox", "Weekly rebuild", "waiting"].waiting
+    assert by["buildbox", "Weekly rebuild", ""].waiting, "its state column says so, not its detail"
     # 30 min on, 10 more done: the recent rate (20 an hour) wins
     snap = snapshot()
     snap.descs[0].done = 50
@@ -232,28 +273,73 @@ def compute_project(tmp_path, compute: str = ""):
     if compute:
         cfg = p.dot / "mission-control.toml"
         cfg.write_text(cfg.read_text() + "\n" + compute)
-    p.store["compute"] = snapshot()
-    p.plugin_state["compute_jobs"] = remote_report()
+    snap = snapshot()
+    snap.descs.append(DescState(Descriptor("ocr", "OCR queue: combined read", pgids=(3,), unit="reads",
+                                           detail="the trimmed list, then two more passes on the same works"),
+                                True, cores=4.0, mem=3.1 * GIB, started=NOW - 6 * HOUR, done=15, total=88,
+                                state="frozen (battery)"))
+    p.store["compute"] = snap
+    report = remote_report()
+    report["buildbox"][0].unit = "reads"
+    report["buildbox"].append(ComputeJob("", "encode 4", started=NOW - 2 * HOUR, done=3, total=12, unit="clips",
+                                         names=("enc",), state="waiting (memory)", as_of=NOW - 30))
+    p.plugin_state["compute_jobs"] = report
     return p
 
 
 @pytest.mark.parametrize("width", (80, 100, 120, 160))
-def test_other_panel_lists_the_compute_jobs(tmp_path, update_golden, width):
+def test_the_compute_panel_lists_the_jobs(tmp_path, update_golden, width):
     p = compute_project(tmp_path, '[compute]\nlocal_name = "laptop"\n')
     engine = p.engine()
     f = engine.build_frame(width)
-    plain, styled = testing.render_text(other_panel(f, width), width)
-    check(f"other/compute-{width}.txt", plain, update_golden)
-    check(f"other/compute-{width}.ansi", styled, update_golden)
-    assert "compute jobs" in plain and "laptop" in plain and "not read: broken.json: no label" in plain
-    assert max(len(line) for line in plain.splitlines()) <= width
+    plain, styled = testing.render_text(compute_panel(f, width), width)
+    check(f"compute/compute-{width}.txt", plain, update_golden)
+    check(f"compute/compute-{width}.ansi", styled, update_golden)
+    lines = plain.splitlines()
+    assert "Compute" in lines[0] and "laptop" in plain and "not read: broken.json: no label" in plain
+    assert max(len(line) for line in lines) <= width
+    assert sum(line.count("laptop") for line in lines) == 1, "a machine is named once, on its first row"
+    head = next(line for line in lines if "machine" in line)
+    assert all(h in head for h in ("job", "state", "progress", "eta"))
+    # what goes first while the names are short: memory, then running, then cores
+    assert "memory" not in head or "running" in head, "running goes after memory"
+    assert "running" not in head or "cores" in head, "cores go after running"
+    assert ("cores" in head) == (width >= 160), "the release's wide bar (short names) leaves no more room"
+    assert "frozen" in plain and "waiting" in plain and "ended" not in plain
+    assert ("render pass" in plain) == (width >= 160), "the detail where there is room, after the label"
+    assert "·…" not in plain and " …" not in plain, "a cut never ends on a separator"
+    tail = lines[-1]
+    assert "running" in tail and "frozen" in tail and "waiting" in tail
 
 
-def test_nothing_heavy_draws_nothing(tmp_path):
+def test_the_compute_panel_lines_its_bars_up_with_the_release_panel(tmp_path):
+    p = compute_project(tmp_path)
+    engine = p.engine()
+    f = engine.build_frame(160)
+    comp, _ = testing.render_text(compute_panel(f, 160), 160)
+    rel, _ = testing.render_text(engine.release_row(f, 160), 160)
+
+    def bar_cols(text: str) -> set[int]:
+        return {line.index("━") for line in text.splitlines() if "━" in line and "%" in line}
+
+    assert bar_cols(comp) and bar_cols(comp) <= bar_cols(rel)
+
+
+def test_job_text_is_cut_at_a_word():
+    assert cut_words("OCR queue: combined read", 30) == "OCR queue: combined read"
+    assert cut_words("OCR queue: combined read", 20) == "OCR queue: combined…"
+    assert cut_words("OCR queue: combined read", 18) == "OCR queue…"
+    assert cut_words("qcomb (trimmed list), then qcomb-p1", 24) == "qcomb (trimmed list)…"
+    assert cut_words("supercalifragilistic", 8) == ""
+
+
+def test_nothing_heavy_draws_no_panel(tmp_path):
     p = Project(tmp_path)
     midway(p)
-    plain, _ = testing.render_text(other_panel(p.engine().build_frame(120), 120), 120)
-    assert "compute jobs" not in plain
+    f = p.engine().build_frame(120)
+    assert compute_panel(f, 120) is None
+    plain, _ = testing.render_text(other_panel(f, 120), 120)
+    assert "machine" not in plain
 
 
 def test_a_plugin_that_fails_its_compute_jobs_shows_in_its_card(tmp_path):
@@ -273,7 +359,12 @@ def test_config(tmp_path):
     from lsw_mission_control.config import load_config
 
     c = load_config(cfg).compute
-    assert c.enabled and c.descriptors is None and c.min_cores == 1.0 and c.local_name == "here"
+    assert c.enabled and c.descriptors is None and c.min_cores == 1.0 and c.local_name == "this computer"
+    assert load_config(cfg).layout.panels[3:5] == ("other", "compute")
+    cfg.write_text(base + '\n[layout]\npanels = ["release", "other", "agents"]\n')
+    assert load_config(cfg).layout.panels == ("release", "other", "compute", "agents"), "where its rows were"
+    cfg.write_text(base + '\n[layout]\npanels = ["compute", "release", "other"]\n')
+    assert load_config(cfg).layout.panels == ("compute", "release", "other")
     cfg.write_text(base + '\n[compute]\ndescriptors = "~/jobs"\nmin_cores = 2\nexclude = ["render"]\n')
     c = load_config(cfg).compute
     assert c.descriptors == tmp_path / "home" / "jobs" and c.min_cores == 2.0 and c.exclude == ("render",)

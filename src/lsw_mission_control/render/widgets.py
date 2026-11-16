@@ -123,6 +123,12 @@ def table_widths(width: int, plan: Plan, fm: FinalMergeCfg, stages_w: int | None
     return max(1, room - 5 - bar_w), bar_w
 
 
+def work_bar_w(width: int, plan: Plan, fm: FinalMergeCfg) -> int:
+    """The bar the release panel's and Other work in progress's tables draw at this width: a table
+    that lines its progress and eta columns up with theirs (the Compute panel's) draws it too."""
+    return table_widths(width, plan, fm, fit_stages(width, stages_width(plan, fm)))[1]
+
+
 def work_table(header: str, width: int, plan: Plan, fm: FinalMergeCfg, stages_w: int | None = None) -> tuple[Table, int]:
     stages_w = fit_stages(width, stages_w or stages_width(plan, fm))
     item_w, bar_w = table_widths(width, plan, fm, stages_w)

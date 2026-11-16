@@ -42,7 +42,7 @@ RATE_MIN_S = 300  # ... once it spans 5 min
 
 @dataclass
 class ComputeJob:
-    """One heavy job, as a row of Other work in progress. A plugin returns these for its remotes."""
+    """One heavy job, as a row of the Compute panel. A plugin returns these for its remotes."""
 
     machine: str  # where it runs: a remote's name ("local" rows are the engine's own)
     label: str
@@ -51,13 +51,17 @@ class ComputeJob:
     mem: float | None = None  # bytes
     done: float | None = None  # progress, with total
     total: float | None = None
-    detail: str = ""  # shown after the label ("stage 6", "waiting")
+    detail: str = ""  # shown dimmed after the label ("stage 6"), where the job column has room
     names: tuple[str, ...] = ()  # the containers (or processes) it covers: a remote descriptor matches these
     eta: float | None = None  # seconds left, when its source knows better than the rate the dashboard sees
     as_of: float | None = None  # when it was read (a remote's last answer); None: now
     waiting: bool = False  # registered, but nothing of it runs yet
     ended: float | None = None  # a descriptor's job that ended this session, at this time
     key: str = ""  # what its progress samples are kept under (the engine sets it)
+    # What it is doing when that is not plainly running ("frozen (battery)", "waiting (memory)"):
+    # its state column reads this, in amber, and it has no finish while it does. "" is running.
+    state: str = ""
+    unit: str = ""  # what its progress counts ("files", "reads"): the progress column says it
 
 
 @dataclass
@@ -87,6 +91,8 @@ class Descriptor:
     total: float | None = None
     started: float | None = None
     detail: str = ""
+    state: dict | None = None  # {"file": f, "when": {substring: state}}: read_state()
+    unit: str = ""
 
 
 @dataclass
@@ -100,6 +106,7 @@ class DescState:
     started: float | None = None
     done: float | None = None
     total: float | None = None
+    state: str = ""  # its state source's answer ("" running)
 
 
 @dataclass
@@ -261,6 +268,15 @@ def parse_descriptor(key: str, raw) -> Descriptor:
     if total is not None and not (isinstance(total, (int, float)) and not isinstance(total, bool) and total > 0):
         raise ValueError("total must be a number above 0")
     detail = raw.get("detail", "")
+    state = raw.get("state")
+    if state is not None and not (isinstance(state, dict) and isinstance(state.get("file"), str)
+                                  and isinstance(state.get("when"), dict) and state["when"]
+                                  and all(isinstance(k, str) and k and isinstance(v, str)
+                                          for k, v in state["when"].items())):
+        raise ValueError("state must be an object with a file and a when of text to text")
+    unit = raw.get("unit", "")
+    if not isinstance(unit, str):
+        raise ValueError("unit must be text")
     return Descriptor(
         key=key, label=label.strip(), machine=machine, vm=vm_profile(vm) if vm else "",
         pids=_ints(m["pid"]) if "pid" in m else (), pgids=_ints(m["pgid"]) if "pgid" in m else (),
@@ -268,7 +284,7 @@ def parse_descriptor(key: str, raw) -> Descriptor:
         containers=_strs(m["container"]) if "container" in m else (),
         prefixes=_strs(m["container_prefix"]) if "container_prefix" in m else (),
         progress=prog, total=float(total) if total is not None else None, started=_time(raw.get("started")),
-        detail=detail if isinstance(detail, str) else "")
+        detail=detail if isinstance(detail, str) else "", state=state, unit=unit.strip())
 
 
 def load_descriptors(folder: Path | None) -> tuple[list[Descriptor], list[str]]:
@@ -337,6 +353,25 @@ def read_progress(spec: dict, t: float) -> tuple[float | None, float | None]:
         return None, None
 
 
+def read_state(spec: dict) -> str:
+    """A job's state from its state source: the last line in the end of `file` that holds one of
+    `when`'s substrings gives that substring's state ("" for running); "" when none does or the
+    file cannot be read. A kit's power-pause log, say: {"froze": "frozen (battery)", "thawed": ""}."""
+    when = spec["when"]
+    try:
+        path = Path(os.path.expanduser(str(spec["file"])))
+        with open(path, "rb") as fh:
+            fh.seek(max(0, path.stat().st_size - 65536))
+            lines = fh.read().decode(errors="replace").splitlines()
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        hits = [(line.rfind(k), v) for k, v in when.items() if k in line]
+        if hits:
+            return max(hits)[1].strip()  # two in one line: the one said last
+    return ""
+
+
 # ── one sample ──────────────────────────────────────────────────────────────────────────────
 def descendants(procs: list[Proc], roots: set[int]) -> set[int]:
     kids: dict[int, list[int]] = {}
@@ -376,17 +411,21 @@ def sample(procs: list[Proc], descs: list[Descriptor], *, t: float, min_cores: f
         alive = bool(roots & pids or set(d.pgids) & pgids)
         # A remote job's local side (its driver) is how it says it waits; its CPU is the remote's.
         if d.machine != "local":
-            states.append(DescState(d, alive))
+            states.append(DescState(d, alive, state=read_state(d.state) if d.state else ""))
             continue
         members = [p for p in live if p.pid in mine] + vm
         claimed |= {p.pid for p in members}
         started = d.started
         if started is None and members:
             started = t - max(p.etime for p in members)
-        done, total = read_progress(d.progress, t) if d.progress else (None, None)
+        state = read_state(d.state) if d.state else ""
+        # A job its state source says is not running (frozen, waiting) writes no progress: the file's
+        # age is then no reason to drop what it last said.
+        spec = {k: v for k, v in d.progress.items() if k != "fresh_min"} if d.progress and state else d.progress
+        done, total = read_progress(spec, t) if spec else (None, None)
         states.append(DescState(d, alive or bool(vm), cores=sum(p.cores for p in members) if members else None,
                                 mem=sum(p.rss for p in members) if members else None, started=started, done=done,
-                                total=total if total is not None else d.total))
+                                total=total if total is not None else d.total, state=state))
     groups: dict[int, list[Proc]] = {}
     rows = []
     for p in live:
@@ -512,7 +551,7 @@ class ComputeBook:
                 if not st.alive and st.cores is None:
                     continue
                 rows.append(ComputeJob("local", d.label, started=st.started, cores=st.cores, mem=st.mem, done=st.done,
-                                       total=st.total, detail=d.detail, key=key))
+                                       total=st.total, detail=d.detail, key=key, state=st.state, unit=d.unit))
                 continue
             hits = [(i, j) for i, (m, j) in enumerate(remote) if m == d.machine and i not in claimed
                     and any(n in d.containers or n.startswith(d.prefixes) for n in j.names)]
@@ -523,10 +562,10 @@ class ComputeBook:
                 rows.append(replace(j, machine=d.machine, label=d.label, detail=detail, key=f"{key}:{j.label}",
                                     done=done if done is not None else j.done,
                                     total=(total or d.total) if done is not None else j.total if j.total else d.total,
-                                    started=j.started or d.started))
+                                    started=j.started or d.started, state=st.state or j.state, unit=d.unit or j.unit))
             if not hits and st.alive and d.machine in reports:
                 rows.append(ComputeJob(d.machine, d.label, started=d.started, done=done, total=total or d.total,
-                                       detail=" · ".join(x for x in (d.detail, "waiting") if x), waiting=True, key=key))
+                                       detail=d.detail, waiting=True, key=key, state=st.state, unit=d.unit))
         rows += [replace(j, key=f"auto:{j.label}") for j in (snap.local if snap else [])]
         rows += [replace(j, machine=m, key=j.key or f"{m}:{j.label}:{j.detail}") for i, (m, j) in enumerate(remote)
                  if i not in claimed]
@@ -541,7 +580,7 @@ class ComputeBook:
             if t - last > ended_min * 60:
                 del self.seen[k]
             elif not any(x.key == k for x in rows):
-                rows.append(replace(r, ended=last, cores=None, mem=None, waiting=False))
+                rows.append(replace(r, ended=last, cores=None, mem=None, waiting=False, state=""))
         # This computer's rows first, then each remote's together, in the order they first came.
         order = {m: i for i, m in enumerate(dict.fromkeys(["local"] + [r.machine for r in rows]))}
         rows.sort(key=lambda r: order[r.machine])

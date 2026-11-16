@@ -116,6 +116,8 @@ freezes the clock.
   is yours (`your …`): it reads that, and the header counts it as waiting on you.
 - **Other work in progress**: everything the release does not wait for, including rows that wait
   on a plugin's live job.
+- **Compute** (when anything heavy runs): each heavy job here and on a plugin's remotes, with its
+  state, running time, CPU, memory, progress and finish.
 - **The side row**: each plugin's card, then **Repository** (HEAD, unpushed commits, branches,
   worktrees, pull requests, the last CI run and release).
 - **Agents at work**: running workflow agents, and the agents a session launched itself (named by

@@ -148,6 +148,22 @@ counts); every other process group on this computer at `min_cores` (1) or more s
 heaviest command, and each colima or lima VM by its name; a plugin reports its remotes' jobs
 (`Plugin.compute_jobs`, `ComputeJob` in the plugin API). Nothing heavy running draws nothing.
 
+The heavy jobs are a panel of their own, **Compute** (`compute` in `[layout] panels`, by default right
+after Other work in progress; a list that names `other` but not `compute` draws it there too), a
+table in the work tables' grammar: `machine` (named once for its rows; `[compute] local_name` now
+defaults to `this computer`, where it was `here`), `job` (the label, then its detail dimmed where
+there is room, cut at a word with `…`, never mid-word), `state` (`running`, `waiting`, a state the
+job's source names such as `frozen (battery)` or `waiting (memory)` in amber, `ended HH:MM`, `read
+Nm ago`), `running`, `cores`, `memory`, the count done (headed by its unit when every row counts the
+same thing), the release panel's bar and share done at the same width and place, and the finish as
+the release panel writes it; a job that is not running has none. Narrower, the detail goes first,
+then memory, running and cores, and then a count's unit and a state's reason; the panel's foot
+counts the rows by state. A descriptor names its unit (`unit`) and where its state is read
+(`state`: the last line of a file that holds one of its substrings), and a plugin's `ComputeJob`
+carries both (`unit`, `state`); while a job's state says it is not running, its progress file's age
+(`fresh_min`) no longer hides its progress. Other work in progress draws its table only when it has
+rows (an empty plan reads `nothing in progress`, where it drew a count over an empty header).
+
 Fixed before the first release:
 
 - An Agent SDK session that ended its turn reads as done. Claude Code appends bookkeeping records after a

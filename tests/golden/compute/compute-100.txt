@@ -1,0 +1,13 @@
+╭─  Compute  ──────────────────────────────────────────────────────────────────────────────────────╮
+│ machine   job                        state               done  progress                      eta │
+│ laptop    Nightly data import        running           40/174  ━━━━━━━━  23%  ~16h45 · Tue 06:58 │
+│           OCR queue: combined read   frozen (battery)   15/88  ━━━━━━━━  17%                   — │
+│           VM colima                  running                                                   — │
+│           python -m pytest -q tests  running                                                   — │
+│ buildbox  Render farm pass           running            5/156  ━━━━━━━━   3%  ~3d18h · Fri 08:49 │
+│           Weekly rebuild             waiting                                                   — │
+│           transcode                  read 10m ago                                              — │
+│           encode 4                   waiting (memory)    3/12  ━━━━━━━━  25%                   — │
+│                                                                                                  │
+│ not read: broken.json: no label                                                                  │
+╰─────────────────────────────────────────────────────────────── 5 running · 1 frozen · 2 waiting ─╯
